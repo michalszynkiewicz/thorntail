@@ -15,6 +15,12 @@
  */
 package org.wildfly.swarm.tools;
 
+import org.jboss.shrinkwrap.api.Node;
+import org.jboss.shrinkwrap.api.asset.Asset;
+import org.wildfly.swarm.bootstrap.env.FractionManifest;
+import org.wildfly.swarm.bootstrap.env.WildFlySwarmManifest;
+import org.wildfly.swarm.fractions.FractionDescriptor;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -29,16 +35,11 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
-
-import org.jboss.shrinkwrap.api.Node;
-import org.jboss.shrinkwrap.api.asset.Asset;
-import org.wildfly.swarm.bootstrap.env.FractionManifest;
-import org.wildfly.swarm.bootstrap.env.WildFlySwarmManifest;
-import org.wildfly.swarm.fractions.FractionDescriptor;
 
 /**
  * @author Bob McWhirter
@@ -284,10 +285,8 @@ public class DependencyManager implements ResolvedDependencies {
                             return null;
                         }
                     })
-                    .filter(e -> e != null)
-                    .anyMatch(e -> {
-                        return Arrays.equals(e, checksum);
-                    });
+                    .filter(Objects::nonNull)
+                    .anyMatch(e -> Arrays.equals(e, checksum));
         } catch (NoSuchAlgorithmException | IOException | DigestException e) {
             e.printStackTrace();
         }
