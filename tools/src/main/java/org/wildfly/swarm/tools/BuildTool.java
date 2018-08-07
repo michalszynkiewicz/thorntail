@@ -15,6 +15,27 @@
  */
 package org.wildfly.swarm.tools;
 
+import net.lingala.zip4j.core.ZipFile;
+import net.lingala.zip4j.exception.ZipException;
+import net.lingala.zip4j.model.FileHeader;
+import org.jboss.shrinkwrap.api.Archive;
+import org.jboss.shrinkwrap.api.ShrinkWrap;
+import org.jboss.shrinkwrap.api.asset.ByteArrayAsset;
+import org.jboss.shrinkwrap.api.asset.FileAsset;
+import org.jboss.shrinkwrap.api.exporter.ZipExporter;
+import org.jboss.shrinkwrap.api.importer.ExplodedImporter;
+import org.jboss.shrinkwrap.api.importer.ZipImporter;
+import org.jboss.shrinkwrap.api.spec.JavaArchive;
+import org.jboss.shrinkwrap.impl.base.io.IOUtil;
+import org.wildfly.swarm.bootstrap.Main;
+import org.wildfly.swarm.bootstrap.env.WildFlySwarmManifest;
+import org.wildfly.swarm.bootstrap.util.BootstrapProperties;
+import org.wildfly.swarm.bootstrap.util.MavenArtifactDescriptor;
+import org.wildfly.swarm.fractions.FractionDescriptor;
+import org.wildfly.swarm.fractions.FractionList;
+import org.wildfly.swarm.fractions.FractionUsageAnalyzer;
+import org.wildfly.swarm.spi.meta.SimpleLogger;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -39,28 +60,6 @@ import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 import java.util.stream.Collectors;
 
-import org.jboss.shrinkwrap.api.Archive;
-import org.jboss.shrinkwrap.api.ShrinkWrap;
-import org.jboss.shrinkwrap.api.asset.ByteArrayAsset;
-import org.jboss.shrinkwrap.api.asset.FileAsset;
-import org.jboss.shrinkwrap.api.exporter.ZipExporter;
-import org.jboss.shrinkwrap.api.importer.ExplodedImporter;
-import org.jboss.shrinkwrap.api.importer.ZipImporter;
-import org.jboss.shrinkwrap.api.spec.JavaArchive;
-import org.jboss.shrinkwrap.impl.base.io.IOUtil;
-import org.wildfly.swarm.bootstrap.Main;
-import org.wildfly.swarm.bootstrap.env.WildFlySwarmManifest;
-import org.wildfly.swarm.bootstrap.util.BootstrapProperties;
-import org.wildfly.swarm.bootstrap.util.MavenArtifactDescriptor;
-import org.wildfly.swarm.fractions.FractionDescriptor;
-import org.wildfly.swarm.fractions.FractionList;
-import org.wildfly.swarm.fractions.FractionUsageAnalyzer;
-import org.wildfly.swarm.spi.meta.SimpleLogger;
-
-import net.lingala.zip4j.core.ZipFile;
-import net.lingala.zip4j.exception.ZipException;
-import net.lingala.zip4j.model.FileHeader;
-
 /**
  * @author Bob McWhirter
  * @author Heiko Braun
@@ -74,9 +73,13 @@ public class BuildTool {
     }
 
     public BuildTool(ArtifactResolvingHelper resolvingHelper) {
+        this(resolvingHelper, false);
+    }
+
+    public BuildTool(ArtifactResolvingHelper resolvingHelper, boolean removeAllThorntailLibs) {
         this.archive = ShrinkWrap.create(JavaArchive.class);
         this.resolver = new DefaultArtifactResolver(resolvingHelper);
-        this.dependencyManager = new DependencyManager(resolver);
+        this.dependencyManager = new DependencyManager(resolver, removeAllThorntailLibs);
     }
 
     public BuildTool declaredDependencies(DeclaredDependencies declaredDependencies) {

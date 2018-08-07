@@ -48,8 +48,9 @@ import java.util.zip.ZipEntry;
  */
 public class DependencyManager implements ResolvedDependencies {
 
-    public DependencyManager(ArtifactResolver resolver) {
+    public DependencyManager(ArtifactResolver resolver, boolean removeAllThorntailLibs) {
         this.resolver = resolver;
+        this.removeAllThorntailLibs = removeAllThorntailLibs;
     }
 
     public void addAdditionalModule(Path module) {
@@ -211,7 +212,20 @@ public class DependencyManager implements ResolvedDependencies {
     }
 
     private void analyzeModuleDependencies(ModuleAnalyzer analyzer) {
-        this.moduleDependencies.addAll(analyzer.getDependencies());
+        List<ArtifactSpec> thorntailDependencies = analyzer.getDependencies();
+        this.moduleDependencies.addAll(thorntailDependencies);
+        // mstodo need a way to whitelist such deps if a user wants them too
+        // mstodo maybe add them all only in case of an IDE run?
+        if (removeAllThorntailLibs) {
+            this.removableDependencies.addAll(thorntailDependencies);
+            try {
+                this.removableDependencies.addAll(resolver.resolveAllArtifactsTransitively(thorntailDependencies, false));
+            } catch (Exception e) {
+                System.err.println("Failed to resolve deps"); // mstodo do sht better with it
+                e.printStackTrace();
+            }
+        }
+        // mstodo handle deps that are excluded by module definitions
     }
 
     /**
@@ -377,5 +391,7 @@ public class DependencyManager implements ResolvedDependencies {
     private ProjectAsset projectAsset;
 
     private ArtifactResolver resolver;
+
+    private final boolean removeAllThorntailLibs;
 
 }
