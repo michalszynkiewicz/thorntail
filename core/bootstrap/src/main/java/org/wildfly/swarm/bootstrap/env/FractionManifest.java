@@ -15,6 +15,8 @@
  */
 package org.wildfly.swarm.bootstrap.env;
 
+import org.yaml.snakeyaml.Yaml;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -22,8 +24,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-
-import org.yaml.snakeyaml.Yaml;
 
 /**
  * @author Bob McWhirter
@@ -49,6 +49,8 @@ public class FractionManifest {
     private boolean internal;
 
     private List<String> dependencies = new ArrayList<>();
+
+    private List<String> mavenDependencies = new ArrayList<>();
 
     public FractionManifest() {
 
@@ -79,6 +81,7 @@ public class FractionManifest {
         setArtifactId((String) data.get("artifactId"));
         setVersion((String) data.get("version"));
         setDependencies((Collection<String>) data.get("dependencies"));
+        setMavenDependencies((Collection<String>) data.get("maven-dependencies"));
         Object internal = data.get("internal");
         if (internal != null) {
             setInternal((Boolean) internal);
@@ -136,6 +139,12 @@ public class FractionManifest {
             this.dependencies.addAll(dependencies);
         }
     }
+    public void setMavenDependencies(Collection<String> mavenDependencies) {
+        this.mavenDependencies.clear();
+        if (mavenDependencies != null) {
+            this.mavenDependencies.addAll(mavenDependencies);
+        }
+    }
 
     public List<String> getDependencies() {
         return this.dependencies;
@@ -163,5 +172,9 @@ public class FractionManifest {
 
     public void setVersion(String version) {
         this.version = version;
+    }
+
+    public List<String> getMavenDependencies() {
+        return mavenDependencies;
     }
 }

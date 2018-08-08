@@ -21,6 +21,7 @@ import org.wildfly.swarm.bootstrap.env.FractionManifest;
 import org.wildfly.swarm.bootstrap.env.WildFlySwarmManifest;
 import org.wildfly.swarm.fractions.FractionDescriptor;
 
+import javax.xml.bind.DatatypeConverter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -40,6 +41,8 @@ import java.util.Set;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
+
+import static java.util.Arrays.asList;
 
 /**
  * @author Bob McWhirter
@@ -120,8 +123,8 @@ public class DependencyManager implements ResolvedDependencies {
         resolveDependencies(declaredDependencies, autodetect);
 
         // sort out removals, modules, etc
+        analyzeFractionManifests();
         analyzeRemovableDependencies(declaredDependencies);
-        analyzeFractionManifests(declaredDependencies);
 
         this.dependencies.stream()
                 .filter(e -> !this.removableDependencies.contains(e))
@@ -129,7 +132,7 @@ public class DependencyManager implements ResolvedDependencies {
                     this.applicationManifest.addDependency(e.mavenGav());
                 });
 
-        analyzeModuleDependencies(declaredDependencies);
+        analyzeModuleDependencies();
 
         return this;
     }
@@ -202,7 +205,7 @@ public class DependencyManager implements ResolvedDependencies {
 
     }
 
-    private void analyzeModuleDependencies(DeclaredDependencies declaredDependencies) {
+    private void analyzeModuleDependencies() {
         this.dependencies.stream()
                 .filter(e -> e.type().equals(JAR))
                 .map(e -> e.file)
@@ -214,18 +217,26 @@ public class DependencyManager implements ResolvedDependencies {
     private void analyzeModuleDependencies(ModuleAnalyzer analyzer) {
         List<ArtifactSpec> thorntailDependencies = analyzer.getDependencies();
         this.moduleDependencies.addAll(thorntailDependencies);
-        // mstodo need a way to whitelist such deps if a user wants them too
-        // mstodo maybe add them all only in case of an IDE run?
-        if (removeAllThorntailLibs) {
-            this.removableDependencies.addAll(thorntailDependencies);
-            try {
-                this.removableDependencies.addAll(resolver.resolveAllArtifactsTransitively(thorntailDependencies, false));
-            } catch (Exception e) {
-                System.err.println("Failed to resolve deps"); // mstodo do sht better with it
-                e.printStackTrace();
-            }
-        }
-        // mstodo handle deps that are excluded by module definitions
+    }
+
+    private void analyzeFractionManifests() {
+        this.dependencies.stream()
+                .map(e -> fractionManifest(e.file))
+                .filter(e -> e != null)
+                .peek(this.fractionManifests::add)
+                .forEach((manifest) -> {
+                    String module = manifest.getModule();
+                    if (module != null) {
+                        this.applicationManifest.addBootstrapModule(module);
+                    }
+                });
+
+        this.dependencies.stream()
+                .filter(e -> isFractionJar(e.file) || isConfigApiModulesJar(e.file))
+                .forEach((artifact) -> {
+                    this.applicationManifest.addBootstrapArtifact(artifact.mavenGav());
+                });
+
     }
 
     /**
@@ -254,25 +265,22 @@ public class DependencyManager implements ResolvedDependencies {
         this.removableDependencies.addAll(justJars);
         this.removableDependencies.removeAll(nonBootstrapTransitive);
 
-    }
-
-    private void analyzeFractionManifests(DeclaredDependencies declaredDependencies) {
-        this.dependencies.stream()
-                .map(e -> fractionManifest(e.file))
-                .filter(e -> e != null)
-                .forEach((manifest) -> {
-                    String module = manifest.getModule();
-                    if (module != null) {
-                        this.applicationManifest.addBootstrapModule(module);
-                    }
-                });
-
-        this.dependencies.stream()
-                .filter(e -> isFractionJar(e.file) || isConfigApiModulesJar(e.file))
-                .forEach((artifact) -> {
-                    this.applicationManifest.addBootstrapArtifact(artifact.mavenGav());
-                });
-
+        if (removeAllThorntailLibs) {
+            // mstodo document and test!
+            String whitelistProperty = System.getProperty("thorntail.user.dependency");
+            Set<String> whitelist = new HashSet<>();
+            if (whitelistProperty != null) {
+                whitelist.addAll(asList(whitelistProperty.split(",")));
+            }
+            Set<String> uniqueMavenDependencies = this.fractionManifests.stream()
+                    .flatMap(manifest -> manifest.getMavenDependencies().stream())
+                    .collect(Collectors.toSet());
+            uniqueMavenDependencies
+                    .stream()
+                    .map(ArtifactSpec::fromMavenDependencyDescription)
+                    .filter(spec -> !whitelist.contains(spec.mscGav()))
+                    .forEach(this.removableDependencies::add);
+        }
     }
 
     Set<ArtifactSpec> getRemovableDependencies() {
@@ -293,6 +301,9 @@ public class DependencyManager implements ResolvedDependencies {
             return this.removableDependencies.stream()
                     .filter(e -> path.endsWith(e.artifactId() + "-" + e.version() + ".jar"))
                     .map(e -> {
+                        if (e.sha1sum != null) {
+                            return DatatypeConverter.parseHexBinary(e.sha1sum.toUpperCase());
+                        }
                         try (final FileInputStream in = new FileInputStream(e.file)) {
                             return checksum(in);
                         } catch (IOException | NoSuchAlgorithmException | DigestException e1) {
@@ -381,6 +392,8 @@ public class DependencyManager implements ResolvedDependencies {
     private static final String JAR = "jar";
 
     private final WildFlySwarmManifest applicationManifest = new WildFlySwarmManifest();
+
+    private final List<FractionManifest> fractionManifests = new ArrayList<>();
 
     private final Set<ArtifactSpec> dependencies = new HashSet<>();
 

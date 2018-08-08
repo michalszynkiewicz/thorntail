@@ -15,10 +15,10 @@
  */
 package org.wildfly.swarm.tools;
 
-import java.io.File;
-
 import org.wildfly.swarm.bootstrap.util.MavenArtifactDescriptor;
 import org.wildfly.swarm.fractions.FractionDescriptor;
+
+import java.io.File;
 
 /**
  * @author Bob McWhirter
@@ -26,6 +26,8 @@ import org.wildfly.swarm.fractions.FractionDescriptor;
 public class ArtifactSpec extends MavenArtifactDescriptor {
 
     public final String scope;
+
+    public final String sha1sum;
 
     public File file;
 
@@ -41,6 +43,17 @@ public class ArtifactSpec extends MavenArtifactDescriptor {
         super(groupId, artifactId, packaging, classifier, version);
         this.scope = scope;
         this.file = file;
+        this.sha1sum = null;
+    }
+    // mstodo - a separate entity?
+    private ArtifactSpec(final String groupId,
+                        final String artifactId,
+                        final String version,
+                        final String classifier,
+                        final String sha1sum) {
+        super(groupId, artifactId, "jar", classifier, version);
+        this.sha1sum = sha1sum;
+        this.scope = "compile";
     }
 
     public static ArtifactSpec fromMscGav(String gav) {
@@ -52,6 +65,13 @@ public class ArtifactSpec extends MavenArtifactDescriptor {
         } else {
             throw new RuntimeException("Invalid gav: " + gav);
         }
+    }
+
+    public static ArtifactSpec fromMavenDependencyDescription(String description) {
+        String[] parts = description.split("#");
+        String[] gavc = parts[0].split(":");
+        String checkSum = parts[1];
+        return new ArtifactSpec(gavc[0], gavc[1], gavc[2], gavc.length > 3 ? gavc[3] : null, checkSum);
     }
 
     public FractionDescriptor toFractionDescriptor() {
@@ -86,6 +106,5 @@ public class ArtifactSpec extends MavenArtifactDescriptor {
     public String toString() {
         return mavenGav() + " [" + this.scope + "]";
     }
-
 
 }
