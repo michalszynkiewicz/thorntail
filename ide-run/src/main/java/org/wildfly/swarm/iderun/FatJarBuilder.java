@@ -32,6 +32,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.FileSystem;
@@ -356,22 +357,24 @@ public class FatJarBuilder {
     }
 
     private String resolveUrlToFile(URL url) {
-        String zipFile = url.getFile();
-        if (zipFile == null) {
-            try (InputStream stream = url.openStream()) {
-                zipFile = File.createTempFile("tt-dependency", ".jar").getAbsolutePath();
-                Files.copy(stream, Paths.get(zipFile));
-            } catch (IOException e) {
-                throw new RuntimeException("Unable to resolve: " + url);
+        try {
+            String zipFile = Paths.get(url.toURI()).toFile().getAbsolutePath();
+            if (zipFile == null) {
+                try (InputStream stream = url.openStream()) {
+                    zipFile = File.createTempFile("tt-dependency", ".jar").getAbsolutePath();
+                    Files.copy(stream, Paths.get(zipFile));
+                }
             }
+            return zipFile;
+        } catch (URISyntaxException | IOException e) {
+            throw new RuntimeException("Unable to resolve: " + url);
         }
-        return zipFile;
     }
 
 
     public static class ArtifactOrFile {
-        private final String file;     // todo: check if holding file is not better
-        private final ArtifactSpec spec;     // todo not needed
+        private final String file;
+        private final ArtifactSpec spec;
 
         private ArtifactOrFile(String file, ArtifactSpec spec) {
             this.file = file;
