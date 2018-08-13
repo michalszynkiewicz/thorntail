@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.wildfly.swarm.iderun;
+package org.wildfly.swarm.runner;
 
 import org.w3c.dom.Document;
 import org.wildfly.swarm.spi.meta.SimpleLogger;
@@ -52,7 +52,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toList;
-import static org.wildfly.swarm.iderun.StringUtils.randomAlphabetic;
+import static org.wildfly.swarm.runner.StringUtils.randomAlphabetic;
 
 /**
  * mstodo: try on license dictionary
@@ -63,6 +63,7 @@ import static org.wildfly.swarm.iderun.StringUtils.randomAlphabetic;
  */
 public class FatJarBuilder {
 
+    public static final String FAKE_GROUP_ID = "com.fakegroupid";
     private final List<URL> classPathUrls;
     private final File target;
 
@@ -106,7 +107,7 @@ public class FatJarBuilder {
     private File doBuild() throws Exception {
         final String type = "war";
 
-        // NOTE: we don't know which props are transitive!!!
+        // TODO: NOTE: we don't know which deps are transitive!!!
         long start = System.currentTimeMillis();
         List<ArtifactOrFile> classPathEntries = analyzeClasspath();
         System.out.println("Classpath analyzing time: " + (System.currentTimeMillis() - start + " ms"));
@@ -122,10 +123,10 @@ public class FatJarBuilder {
                 .properties(System.getProperties())
 //                .mainClass(this.mainClass)
 //                .bundleDependencies(this.bundleDependencies)
-                .fractionDetectionMode(BuildTool.FractionDetectionMode.when_missing) // mstodo is this reasonable?
+                .fractionDetectionMode(BuildTool.FractionDetectionMode.when_missing)
                 .hollow(false)
                 .logger(new SimpleLogger() {
-                    // mstodo proper logging
+                    // mstodo proper logging ?
                     @Override
                     public void debug(String msg) {
                         System.out.println(msg);
@@ -160,12 +161,6 @@ public class FatJarBuilder {
 //        Map<ArtifactSpec, Set<ArtifactSpec>> buckets = createBuckets(this.project.getArtifacts(), this.project.getDependencies());
 
 
-        // mstodo:
-        // - go through the classpath jars
-        //      -> for the ones built with maven, we have maven coordinates in the META-INF/maven/../pom.xml
-        // - run the tool on it
-        // - check which jars are missing from the fat jar, add them to war
-        // - add classes to war
         tool.declaredDependencies(declaredDependencies(classPathEntries));
 
 
@@ -181,16 +176,10 @@ public class FatJarBuilder {
         File jar = tool.build(target.getName(), target.getParentFile().toPath());
 
 
-//            if (this.project.getPackaging().equals(WAR)) {
-//            mstodo: create a war with everything that didn't make into the jars above
         tool.repackageWar(war);
-//            }
         return jar;
     }
 
-    /*
-    mstodo: it is to early to add jars here!
-     */
     /**
      * builds war with classes inside
      *
@@ -239,14 +228,20 @@ public class FatJarBuilder {
     }
 
     private List<ArtifactOrFile> analyzeClasspath() {
-        return classPathUrls.parallelStream()    // [mstodo remove comment] verified
+        return classPathUrls.parallelStream()
+                .filter(this::notJdkJar)
                 .map(this::urlToSpec)
                 .collect(toList());
+    }
+
+    private boolean notJdkJar(URL url) {
+        return !url.toString().contains(System.getProperty("java.home"));
     }
 
     private DeclaredDependencies declaredDependencies(List<ArtifactOrFile> specsOrUrls) {
         List<ArtifactSpec> specs =
                 specsOrUrls.stream()
+                        .filter(ArtifactOrFile::isJar)
                         .filter(ArtifactOrFile::hasSpec)
                         .map(specOrUrl -> specOrUrl.spec)
                         .collect(toList());
@@ -298,7 +293,7 @@ public class FatJarBuilder {
 
     private ArtifactSpec mockArtifactSpec(String jarPath) {
         return new ArtifactSpec("compile",
-                "com.fakegroupid", randomAlphabetic(10), "0.0.1", "jar", null,
+                FAKE_GROUP_ID, randomAlphabetic(10), "0.0.1", "jar", null,
                 new File(jarPath));
     }
 
@@ -385,8 +380,12 @@ public class FatJarBuilder {
             return spec;
         }
 
-        public boolean hasSpec() {
+        public boolean isJar() {
             return spec != null;
+        }
+
+        public boolean hasSpec() {
+            return !spec.groupId().equals(FAKE_GROUP_ID);
         }
 
         private static ArtifactOrFile file(String file) {

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.wildfly.swarm.iderun;
+package org.wildfly.swarm.runner;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -59,15 +59,9 @@ public class WarBuilder {
     private void build() {
         classesDirs.forEach(this::addClassesToWar);
         addWebAppResourcesToWar();
-        jars.stream()
-                .filter(this::notJdkJar)
-                .forEach(this::addJarToWar);
+        jars.stream().forEach(this::addJarToWar);
     }
 
-    private boolean notJdkJar(File file) {
-        // mstodo test it!
-        return !file.getAbsolutePath().contains(System.getProperty("java.home"));
-    }
 
     private void addClassesToWar(String directory) {
         File classesDirectory = new File(directory);

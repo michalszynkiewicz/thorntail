@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.wildfly.swarm.iderun;
+package org.wildfly.swarm.runner;
 
 import java.util.concurrent.ThreadLocalRandom;
 

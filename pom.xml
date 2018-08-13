@@ -1080,7 +1080,7 @@
     <module>standalone-servers/microprofile</module>
     <module>standalone-servers/web</module>
 
-    <module>ide-run</module>
+    <module>thorntail-runner</module>
   </modules>
 
   <profiles>

@@ -130,7 +130,7 @@ public class DependencyManager implements ResolvedDependencies {
 
         this.dependencies.stream()
                 .filter(e -> !this.removableDependencies.contains(e))
-                .filter(this::isNotIdeRunJar)
+                .filter(this::isNotThorntailRunner)
                 .forEach(e -> this.applicationManifest.addDependency(e.mavenGav()));
 
         analyzeModuleDependencies();
@@ -138,9 +138,9 @@ public class DependencyManager implements ResolvedDependencies {
         return this;
     }
 
-    private boolean isNotIdeRunJar(ArtifactSpec artifactSpec) {
-        return !artifactSpec.artifactId().equals("io.thorntail")
-                || !artifactSpec.groupId().equals("ide-run"); // mstodo make sure to change on refactoring
+    private boolean isNotThorntailRunner(ArtifactSpec artifactSpec) {
+        return !artifactSpec.groupId().equals("io.thorntail")
+                || !artifactSpec.artifactId().equals("thorntail-runer");
     }
 
     /**

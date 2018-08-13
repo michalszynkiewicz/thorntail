@@ -45,7 +45,7 @@ public class ArtifactSpec extends MavenArtifactDescriptor {
         this.file = file;
         this.sha1sum = null;
     }
-    // mstodo - a separate entity?
+
     private ArtifactSpec(final String groupId,
                         final String artifactId,
                         final String version,
