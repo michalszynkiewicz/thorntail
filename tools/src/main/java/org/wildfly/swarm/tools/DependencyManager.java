@@ -1,12 +1,12 @@
 /**
  * Copyright 2015-2017 Red Hat, Inc, and individual contributors.
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
+ * <p>
  * http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -22,10 +22,12 @@ import org.wildfly.swarm.bootstrap.env.WildFlySwarmManifest;
 import org.wildfly.swarm.fractions.FractionDescriptor;
 
 import javax.xml.bind.DatatypeConverter;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.security.DigestException;
 import java.security.MessageDigest;
@@ -128,13 +130,17 @@ public class DependencyManager implements ResolvedDependencies {
 
         this.dependencies.stream()
                 .filter(e -> !this.removableDependencies.contains(e))
-                .forEach(e -> {
-                    this.applicationManifest.addDependency(e.mavenGav());
-                });
+                .filter(this::isNotIdeRunJar)
+                .forEach(e -> this.applicationManifest.addDependency(e.mavenGav()));
 
         analyzeModuleDependencies();
 
         return this;
+    }
+
+    private boolean isNotIdeRunJar(ArtifactSpec artifactSpec) {
+        return !artifactSpec.artifactId().equals("io.thorntail")
+                || !artifactSpec.groupId().equals("ide-run"); // mstodo make sure to change on refactoring
     }
 
     /**
@@ -272,9 +278,14 @@ public class DependencyManager implements ResolvedDependencies {
             if (whitelistProperty != null) {
                 whitelist.addAll(asList(whitelistProperty.split(",")));
             }
-            Set<String> uniqueMavenDependencies = this.fractionManifests.stream()
+            Set<String> uniqueMavenDependencies = new HashSet<>();
+            this.dependencies.stream()
+                    .map(e -> e.file)
+                    .flatMap(e -> ideRunDependencies(e).stream())
+                    .forEach(uniqueMavenDependencies::add);
+            this.fractionManifests.stream()
                     .flatMap(manifest -> manifest.getMavenDependencies().stream())
-                    .collect(Collectors.toSet());
+                    .forEach(uniqueMavenDependencies::add);
             uniqueMavenDependencies
                     .stream()
                     .map(ArtifactSpec::fromMavenDependencyDescription)
@@ -301,6 +312,9 @@ public class DependencyManager implements ResolvedDependencies {
             return this.removableDependencies.stream()
                     .filter(e -> path.endsWith(e.artifactId() + "-" + e.version() + ".jar"))
                     .map(e -> {
+                        // mstodo fails if an invalid checksum is given by maven!
+                        // mstodo: resign?
+                        // mstodo remove from manifest and dep file
                         if (e.sha1sum != null) {
                             return DatatypeConverter.parseHexBinary(e.sha1sum.toUpperCase());
                         }
@@ -357,6 +371,31 @@ public class DependencyManager implements ResolvedDependencies {
             // ignore
         }
         return false;
+    }
+
+    protected List<String> ideRunDependencies(File file) {
+        if (file == null) {
+            return Collections.emptyList();
+        }
+
+        List<String> resultList = new ArrayList<>();
+
+        try (JarFile jar = new JarFile(file)) {
+            ZipEntry entry = jar.getEntry("META-INF/maven-dependencies.txt");
+            if (entry != null) {
+                InputStream inputStream = jar.getInputStream(entry);
+                try (InputStreamReader streamReader = new InputStreamReader(inputStream);
+                     BufferedReader reader = new BufferedReader(streamReader)) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        resultList.add(line);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            // ignore
+        }
+        return resultList;
     }
 
     protected FractionManifest fractionManifest(File file) {

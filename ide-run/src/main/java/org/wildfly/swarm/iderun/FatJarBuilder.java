@@ -45,7 +45,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -111,14 +110,6 @@ public class FatJarBuilder {
         long start = System.currentTimeMillis();
         List<ArtifactOrFile> classPathEntries = analyzeClasspath();
         System.out.println("Classpath analyzing time: " + (System.currentTimeMillis() - start + " ms"));
-
-        // non-maven jars are not taken into account above
-        // we need to make sure that none of them are skipped and add to war the ones that were
-        // mstodo
-        List<String> nonMavenJars = classPathEntries.stream()
-                .map(e -> e.file)
-                .filter(Objects::nonNull)
-                .collect(toList());
 
         File war = buildWar(classPathEntries);
         final BuildTool tool = new BuildTool(mavenArtifactResolvingHelper(), true)
@@ -210,7 +201,8 @@ public class FatJarBuilder {
         try {
             List<String> classesUrls = classPathEntries.stream()
                     .map(ArtifactOrFile::file)
-                    .filter(url -> url.endsWith("/classes/"))
+                    .filter(this::isDirectory)
+                    .filter(url -> url.contains("classes"))
                     .collect(Collectors.toList());
 
             List<File> classpathJars = classPathEntries.stream()
@@ -224,6 +216,10 @@ public class FatJarBuilder {
         } catch (IOException e) {
             throw new RuntimeException("failed to build war", e);
         }
+    }
+
+    private boolean isDirectory(String filePath) {
+        return Files.isDirectory(Paths.get(filePath));
     }
 
 
