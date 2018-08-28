@@ -272,8 +272,8 @@ public class DependencyManager implements ResolvedDependencies {
         this.removableDependencies.removeAll(nonBootstrapTransitive);
 
         if (removeAllThorntailLibs) {
-            // mstodo document and test!
-            String whitelistProperty = System.getProperty("thorntail.user.dependency");
+            // mstodo test!
+            String whitelistProperty = System.getProperty("thorntail.runner.user-dependencies");
             Set<String> whitelist = new HashSet<>();
             if (whitelistProperty != null) {
                 whitelist.addAll(asList(whitelistProperty.split(",")));
@@ -312,9 +312,6 @@ public class DependencyManager implements ResolvedDependencies {
             return this.removableDependencies.stream()
                     .filter(e -> path.endsWith(e.artifactId() + "-" + e.version() + ".jar"))
                     .map(e -> {
-                        // mstodo fails if an invalid checksum is given by maven!
-                        // mstodo: resign?
-                        // mstodo remove from manifest and dep file
                         if (e.sha1sum != null) {
                             return DatatypeConverter.parseHexBinary(e.sha1sum.toUpperCase());
                         }

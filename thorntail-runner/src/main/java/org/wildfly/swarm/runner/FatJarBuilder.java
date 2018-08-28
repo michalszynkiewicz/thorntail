@@ -21,9 +21,11 @@ import org.wildfly.swarm.tools.ArtifactResolvingHelper;
 import org.wildfly.swarm.tools.ArtifactSpec;
 import org.wildfly.swarm.tools.BuildTool;
 import org.wildfly.swarm.tools.DeclaredDependencies;
+import org.xml.sax.SAXException;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpression;
@@ -55,8 +57,6 @@ import static java.util.stream.Collectors.toList;
 import static org.wildfly.swarm.runner.StringUtils.randomAlphabetic;
 
 /**
- * mstodo: try on license dictionary
- *
  * @author Michal Szynkiewicz, michal.l.szynkiewicz@gmail.com
  * <br>
  * Date: 7/30/18
@@ -115,14 +115,12 @@ public class FatJarBuilder {
         File war = buildWar(classPathEntries);
         final BuildTool tool = new BuildTool(mavenArtifactResolvingHelper(), true)
                 .projectArtifact("tt",
-                        "tt-user-app",
+                        "wfswarm-user-app",
                         "0.1-SNAPSHOT",
                         type,
                         war,
-                        "artificial.war")// mstodo
+                        "users.war")
                 .properties(System.getProperties())
-//                .mainClass(this.mainClass)
-//                .bundleDependencies(this.bundleDependencies)
                 .fractionDetectionMode(BuildTool.FractionDetectionMode.when_missing)
                 .hollow(false)
                 .logger(new SimpleLogger() {
@@ -149,7 +147,12 @@ public class FatJarBuilder {
                     }
                 });
 
-//        mstodo replace with system or env property
+        String mainClass = System.getProperty("thorntail.runner.main-class");
+        if (mainClass != null) {
+            tool.mainClass(mainClass);
+        }
+
+//        TODO support fraction exclusion? consider using a system property
 //        this.fractions.forEach(f -> {
 //            if (f.startsWith(EXCLUDE_PREFIX)) {
 //                tool.excludeFraction(ArtifactSpec.fromFractionDescriptor(FractionDescriptor.fromGav(FractionList.get(), f.substring(1))));
@@ -164,17 +167,15 @@ public class FatJarBuilder {
         tool.declaredDependencies(declaredDependencies(classPathEntries));
 
 
-        // mstodo can any non-file url get here?
         this.classPathUrls.parallelStream()
                 .filter(url -> !url.toString().matches(".*\\.[^/]*"))
                 .forEach(r -> tool.resourceDirectory(r.getFile()));
 
-        // mstodo replace/remove
-        Path uberjarResourcesDir = File.createTempFile("uberjar-resources-placehodler", "bs").toPath();
-        tool.uberjarResourcesDirectory(uberjarResourcesDir);
+        File uberjarResourcesDir = File.createTempFile("thorntail-runner-uberjar-resources", "placeholder");
+        uberjarResourcesDir.deleteOnExit();
+        tool.uberjarResourcesDirectory(uberjarResourcesDir.toPath());
 
         File jar = tool.build(target.getName(), target.getParentFile().toPath());
-
 
         tool.repackageWar(war);
         return jar;
@@ -216,12 +217,12 @@ public class FatJarBuilder {
         // all artifacts should have files defined, no need to resolve anything
         return new ArtifactResolvingHelper() {
             @Override
-            public ArtifactSpec resolve(ArtifactSpec spec) throws Exception {
+            public ArtifactSpec resolve(ArtifactSpec spec) {
                 return spec;
             }
 
             @Override
-            public Set<ArtifactSpec> resolveAll(Collection<ArtifactSpec> specs, boolean transitive, boolean defaultExcludes) throws Exception {
+            public Set<ArtifactSpec> resolveAll(Collection<ArtifactSpec> specs, boolean transitive, boolean defaultExcludes) {
                 return new HashSet<>(specs);
             }
         };
@@ -243,7 +244,7 @@ public class FatJarBuilder {
                 specsOrUrls.stream()
                         .filter(ArtifactOrFile::isJar)
                         .filter(ArtifactOrFile::hasSpec)
-                        .map(specOrUrl -> specOrUrl.spec)
+                        .map(ArtifactOrFile::spec)
                         .collect(toList());
         return new DeclaredDependencies() {
             @Override
@@ -283,7 +284,6 @@ public class FatJarBuilder {
             maybePomXml = Optional.empty();
         } else {
 
-            /*mstodo: switch this to getPathMatcher?*/
             maybePomXml = Files.walk(path)
                     .filter(p -> p.endsWith("pom.xml"))
                     .findAny();
@@ -300,7 +300,7 @@ public class FatJarBuilder {
 
     private ArtifactSpec toArtifactSpec(Path pom, String jarPath) {
         try {
-            // mstodo watch out for properties?
+            // TODO support properties?
             String groupId = extract(pom, "/project/groupId",
                     () -> extract(pom, "/project/parent/groupId"));
             String artifactId = extract(pom, "/project/artifactId");
@@ -333,18 +333,26 @@ public class FatJarBuilder {
                 : extracted;
     }
 
-    private String extract(Path sourcePath, String expression) {   // mstodo simplify, make the extract great again
+    private String extract(Path sourcePath, String expression) {
         try (InputStream source = Files.newInputStream(sourcePath)) {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            DocumentBuilder builder = factory.newDocumentBuilder();
-            Document doc = builder.parse(source);
-            XPathFactory xPathfactory = XPathFactory.newInstance();
-            XPath xpath = xPathfactory.newXPath();
+            Document doc = parseDocument(source);
+            XPath xpath = createXpath();
             XPathExpression expr = xpath.compile(expression);
             return (String) expr.evaluate(doc, XPathConstants.STRING);
         } catch (Exception any) {
-            throw new RuntimeException("Failure when trying to find a match for " + expression, any);
+            throw new RuntimeException("Failure when trying to find a match for " + expression + " in " + sourcePath.toAbsolutePath(), any);
         }
+    }
+
+    private XPath createXpath() {
+        XPathFactory xPathfactory = XPathFactory.newInstance();
+        return xPathfactory.newXPath();
+    }
+
+    private Document parseDocument(InputStream source) throws ParserConfigurationException, SAXException, IOException {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        DocumentBuilder builder = factory.newDocumentBuilder();
+        return builder.parse(source);
     }
 
     private String resolveUrlToFile(URL url) {
@@ -352,7 +360,9 @@ public class FatJarBuilder {
             String zipFile = Paths.get(url.toURI()).toFile().getAbsolutePath();
             if (zipFile == null) {
                 try (InputStream stream = url.openStream()) {
-                    zipFile = File.createTempFile("tt-dependency", ".jar").getAbsolutePath();
+                    File tempFile = File.createTempFile("tt-dependency", ".jar");
+                    tempFile.deleteOnExit();
+                    zipFile = tempFile.getAbsolutePath();
                     Files.copy(stream, Paths.get(zipFile));
                 }
             }

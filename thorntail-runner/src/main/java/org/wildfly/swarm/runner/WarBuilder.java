@@ -32,10 +32,10 @@ import java.util.zip.ZipOutputStream;
  * Date: 8/1/18
  */
 public class WarBuilder {
-    // mstodo webapp resources pointed by properties
 
     public static File build(List<String> classesDirs, List<File> classpathJars) throws IOException {
-        File war = File.createTempFile("temp-tt-war", ".war");   // mstodo better path
+        File war = File.createTempFile("wfswarm-user-war", ".war");
+        war.deleteOnExit();
         try (FileOutputStream fos = new FileOutputStream(war);
              ZipOutputStream out = new ZipOutputStream(fos)) {
 
@@ -73,7 +73,7 @@ public class WarBuilder {
 
     private void addWebAppResourcesToWar() {
         try {
-            Path webappPath = Paths.get("src", "main", "webapp");
+            Path webappPath = getWebAppLocation();
             if (!webappPath.toFile().exists()) {
                 return;
             }
@@ -82,6 +82,24 @@ public class WarBuilder {
         } catch (IOException e) {
             throw new RuntimeException("Unable to get webapp dir");
         }
+    }
+
+    private Path getWebAppLocation() {
+        Path webappPath;
+
+        String webappLocationProperty = System.getProperty("thorntail.runner.webapp-location");
+
+        if (webappLocationProperty != null) {
+            webappPath = Paths.get(webappLocationProperty);
+            if (!webappPath.toFile().exists()) {
+                // user provided a location for webapp dir but it's invalid
+                System.err.println("Invalid web app location directory provided: " + webappLocationProperty);
+                System.exit(1);
+            }
+        } else {
+            webappPath = Paths.get("src", "main", "webapp");
+        }
+        return webappPath;
     }
 
     private void addJarToWar(File file) {

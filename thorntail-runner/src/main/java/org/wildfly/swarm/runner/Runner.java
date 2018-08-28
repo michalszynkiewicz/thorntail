@@ -32,14 +32,36 @@ import java.util.stream.Collectors;
 import static java.lang.String.format;
 import static java.util.Arrays.asList;
 
-// mstodo:
-/*
-logging - play with the generated fat jar to figure out what's wrong with logging
-filtering classes - remove the ide-run deps from the fat jar
-support custom web app dir
+/**
+ * The class to execute when running Thorntail in the IDE.
+ *
+ * It first generates an uber-jar and then executes it.
+ * The jar is generated from the IDE classpath by taking the Thorntail dependencies, generating an uber-jar in the similar way
+ * as thorntail-maven-plugin does and removing all the transitive dependencies of the Thorntail elements from WEB-INF/lib
+ * in the internal WAR.
+ *
+ * The following options are available to control the execution:
+ * <ul>
+ *     <li>
+ *         <b>thorntail.runner.preserve-jar</b> - keep the generated uber-jar when the application is stopped; might be useful for debugging
+ *     </li>
+ *     <li>
+ *         <b>thorntail.runner.user-dependencies</b> - a comma-separated list of groupId:artifactId:version of artifacts
+ *         to keep in WEB-INF/lib even though they are dependencies of Swarm elements
+ *     </li>
+ *     <li>
+ *         <b>thorntail.runner.main-class</b> - user's main class replacing the default org.wildfly.swarm.Swarm class.
+ *         Please note that using custom main class is discouraged.
+ *     </li>
+ *     <li>
+ *         <b>thorntail.runner.webapp-location</b> - by default, Runner expects webapp in `src/main/webapp`. This property
+ *         can be used to point to a different location of the webapp directory
+ *     </li>
+ * </ul>
  */
-
 public class Runner {
+
+    private static final String PRESERVE_JAR = "thorntail.runner.preserve-jar";
 
     private Runner() {
     }
@@ -65,12 +87,17 @@ public class Runner {
     }
 
     private static URLClassLoader createClassLoader() throws Exception {
-        File fatJar = File.createTempFile("t-t", ".jar"); // mstodo better name?
+        File fatJar = File.createTempFile("wfswarm-user-app", ".jar");
         buildJar(fatJar);
-        System.out.println("Built " + fatJar.getAbsolutePath());
+
+        System.out.println("Built " + fatJar.getAbsolutePath() + ", the file will be deleted on shutdown. To keep it, use -D" + PRESERVE_JAR);
+
+        if (System.getProperties().getProperty(PRESERVE_JAR) == null) {
+            fatJar.deleteOnExit();
+        }
 
         URL jarUrl = fatJar.toURI().toURL();
-        return new URLClassLoader(new URL[]{jarUrl}, null); //(ClassLoader) ClassLoader.getSystemClassLoader().getParent());
+        return new URLClassLoader(new URL[]{jarUrl}, null);
     }
 
     private static void buildJar(File fatJar) throws IOException, InterruptedException {
