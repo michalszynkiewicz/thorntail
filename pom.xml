@@ -382,7 +382,7 @@
         <artifactId>bootstrap</artifactId>
         <version>2.0.1.Final-SNAPSHOT</version>
       </dependency>
-
+<!--
       <dependency>
         <groupId>io.thorntail</groupId>
         <artifactId>camel-core</artifactId>
@@ -448,7 +448,7 @@
         <artifactId>camel-undertow</artifactId>
         <version>2.0.1.Final-SNAPSHOT</version>
       </dependency>
-
+-->
       <dependency>
         <groupId>io.thorntail</groupId>
         <artifactId>cdi</artifactId>
@@ -1150,7 +1150,7 @@
         <module>fractions/microprofile/microprofile-restclient</module>
 
         <module>fractions/asciidoctorj</module>
-        <module>fractions/camel</module>
+<!--        <module>fractions/camel</module> -->
         <module>fractions/drools-server</module>
         <module>fractions/fluentd</module>
         <module>fractions/flyway</module>
@@ -1291,14 +1291,14 @@
         <module>testsuite/testsuite-jose</module>
         <module>testsuite/testsuite-asciidoctorj</module>
         <module>testsuite/testsuite-batch-jberet</module>
-        <module>testsuite/testsuite-camel-cdi</module>
+<!--        <module>testsuite/testsuite-camel-cdi</module>
         <module>testsuite/testsuite-camel-core</module>
         <module>testsuite/testsuite-camel-cxf</module>
         <module>testsuite/testsuite-camel-ejb</module>
         <module>testsuite/testsuite-camel-jms</module>
         <module>testsuite/testsuite-camel-jmx</module>
         <module>testsuite/testsuite-camel-jpa</module>
-        <module>testsuite/testsuite-camel-ognl</module>
+        <module>testsuite/testsuite-camel-ognl</module> -->
         <module>testsuite/testsuite-cdi-jaxrsapi</module>
         <module>testsuite/testsuite-cdi-jaxws</module>
         <module>testsuite/testsuite-classloader</module>

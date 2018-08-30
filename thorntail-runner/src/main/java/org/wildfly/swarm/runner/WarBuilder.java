@@ -19,6 +19,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -119,7 +120,6 @@ public class WarBuilder {
                 // mstodo test on windows!
 
                 String fileName = file.getAbsolutePath().replace(projectDir, "");
-                System.out.println("filename: " + fileName + ", abs path: " + file.getAbsolutePath() + ", to replace from it: " + Paths.get(".").toFile().getAbsolutePath());
                 writeFileToZip(file, fileName);
             } catch (IOException e) {
                 throw new RuntimeException("Unable to add file: " + path.toAbsolutePath() + "  from webapp to the war", e);
@@ -140,15 +140,21 @@ public class WarBuilder {
 
     private void addClassToWar(File file, File classesDirectory) {
         try {
-            String filePath = file.getAbsolutePath();
-            String name = filePath.replaceFirst(classesDirectory.getAbsolutePath(), "");
-            name = name.replaceAll("^/", "");
-            name = name.replaceAll("^\\\\", "");   // mstodo test it on windows
+            String name = getRelativePath(file, classesDirectory.getAbsolutePath());
             name = "/WEB-INF/classes/" + name;
             writeFileToZip(file, name);
         } catch (IOException e) {
             throw new RuntimeException("Failed to add file " + file.getAbsolutePath() + " to war", e);
         }
+    }
+
+    private String getRelativePath(File file, String parentPath) {
+        String relativePath = file.getAbsolutePath().substring(parentPath.length());
+        String separator = FileSystems.getDefault().getSeparator();
+        if (relativePath.startsWith(separator)) {
+            relativePath = relativePath.substring(separator.length());
+        }
+        return relativePath;
     }
 
     private void writeFileToZip(File file, String name) throws IOException {

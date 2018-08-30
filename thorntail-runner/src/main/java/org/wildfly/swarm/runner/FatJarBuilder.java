@@ -124,7 +124,6 @@ public class FatJarBuilder {
                 .fractionDetectionMode(BuildTool.FractionDetectionMode.when_missing)
                 .hollow(false)
                 .logger(new SimpleLogger() {
-                    // mstodo proper logging ?
                     @Override
                     public void debug(String msg) {
                         System.out.println(msg);
@@ -137,12 +136,12 @@ public class FatJarBuilder {
 
                     @Override
                     public void error(String msg) {
-                        System.out.println(msg);
+                        System.err.println(msg);
                     }
 
                     @Override
                     public void error(String msg, Throwable t) {
-                        System.out.println(msg);
+                        System.err.println(msg);
                         t.printStackTrace();
                     }
                 });
@@ -214,6 +213,7 @@ public class FatJarBuilder {
 
 
     private ArtifactResolvingHelper mavenArtifactResolvingHelper() {
+        return new SimpleArtifactResolvingHelper(new org.eclipse.aether.impl.ArtifactResolver());
         // all artifacts should have files defined, no need to resolve anything
         return new ArtifactResolvingHelper() {
             @Override
