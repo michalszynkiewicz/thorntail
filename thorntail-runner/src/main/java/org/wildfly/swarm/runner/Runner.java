@@ -57,6 +57,11 @@ import static java.util.Arrays.asList;
  *         <b>thorntail.runner.webapp-location</b> - by default, Runner expects webapp in `src/main/webapp`. This property
  *         can be used to point to a different location of the webapp directory
  *     </li>
+ *     <li>
+ *         <b>thorntail.runner.repositories</b> - additional maven repositories to look for artifacts.
+ *         By default Runner searches for artifacts in Maven Central and repository.jboss.org.
+ *         Expects a comma separated list of repositoryUrl[:username:password]
+ *     </li>
  * </ul>
  */
 public class Runner {

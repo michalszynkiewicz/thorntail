@@ -1,3 +1,5 @@
+package org.wildfly.swarm.maven.utils;
+
 /**
  * Copyright 2015-2017 Red Hat, Inc, and individual contributors.
  *
@@ -13,7 +15,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.wildfly.swarm.plugin.maven;
 
 import java.util.Map;
 
@@ -43,13 +44,13 @@ import org.wildfly.swarm.fractions.FractionDescriptor;
 /**
  * @author Ken Finnigan
  */
-final class RepositorySystemSessionWrapper implements RepositorySystemSession {
+public final class RepositorySystemSessionWrapper implements RepositorySystemSession {
 
     public RepositorySystemSessionWrapper(RepositorySystemSession delegate, DependencyGraphTransformer transformer) {
         this(delegate, transformer, false);
     }
 
-    RepositorySystemSessionWrapper(RepositorySystemSession delegate, DependencyGraphTransformer transformer, boolean excludeSwarm) {
+    public RepositorySystemSessionWrapper(RepositorySystemSession delegate, DependencyGraphTransformer transformer, boolean excludeSwarm) {
         this.delegate = delegate;
         this.transformer = transformer;
         this.excludeSwarm = excludeSwarm;

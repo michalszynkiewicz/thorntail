@@ -17,7 +17,6 @@ package org.wildfly.swarm.runner;
 
 import org.w3c.dom.Document;
 import org.wildfly.swarm.spi.meta.SimpleLogger;
-import org.wildfly.swarm.tools.ArtifactResolvingHelper;
 import org.wildfly.swarm.tools.ArtifactSpec;
 import org.wildfly.swarm.tools.BuildTool;
 import org.wildfly.swarm.tools.DeclaredDependencies;
@@ -45,10 +44,8 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -63,7 +60,7 @@ import static org.wildfly.swarm.runner.StringUtils.randomAlphabetic;
  */
 public class FatJarBuilder {
 
-    public static final String FAKE_GROUP_ID = "com.fakegroupid";
+    public static final String FAKE_GROUP_ID = "com.fakegroupid";  // TODO: is this needed?
     private final List<URL> classPathUrls;
     private final File target;
 
@@ -113,7 +110,7 @@ public class FatJarBuilder {
         System.out.println("Classpath analyzing time: " + (System.currentTimeMillis() - start + " ms"));
 
         File war = buildWar(classPathEntries);
-        final BuildTool tool = new BuildTool(mavenArtifactResolvingHelper(), true)
+        final BuildTool tool = new BuildTool(new SimpleArtifactResolvingHelper(), true)
                 .projectArtifact("tt",
                         "wfswarm-user-app",
                         "0.1-SNAPSHOT",
@@ -209,23 +206,6 @@ public class FatJarBuilder {
 
     private boolean isDirectory(String filePath) {
         return Files.isDirectory(Paths.get(filePath));
-    }
-
-
-    private ArtifactResolvingHelper mavenArtifactResolvingHelper() {
-        return new SimpleArtifactResolvingHelper(new org.eclipse.aether.impl.ArtifactResolver());
-        // all artifacts should have files defined, no need to resolve anything
-        return new ArtifactResolvingHelper() {
-            @Override
-            public ArtifactSpec resolve(ArtifactSpec spec) {
-                return spec;
-            }
-
-            @Override
-            public Set<ArtifactSpec> resolveAll(Collection<ArtifactSpec> specs, boolean transitive, boolean defaultExcludes) {
-                return new HashSet<>(specs);
-            }
-        };
     }
 
     private List<ArtifactOrFile> analyzeClasspath() {
