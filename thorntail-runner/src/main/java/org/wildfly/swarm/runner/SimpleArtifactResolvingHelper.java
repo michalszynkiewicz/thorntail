@@ -68,6 +68,8 @@ import java.util.stream.Stream;
  */
 public class SimpleArtifactResolvingHelper implements ArtifactResolvingHelper {
 
+    public static final String PARALLELISM = "java.util.concurrent.ForkJoinPool.common.parallelism";
+
     public SimpleArtifactResolvingHelper() {
         repoSystem = newRepositorySystem();
 
@@ -120,12 +122,21 @@ public class SimpleArtifactResolvingHelper implements ArtifactResolvingHelper {
         }
         long start = System.currentTimeMillis(); // mstodo better time logging
         System.out.println("resolving artifacts");
+        String originalPoolSize = System.getProperty(PARALLELISM);
         try {
-            return toResolve.stream()
+            // mstodo waaay to slow
+            // mstodo try simple parallelism with 20 threads? 10?
+            System.setProperty(PARALLELISM, "20");
+            return toResolve.parallelStream()
                     .map(this::resolve)
                     .filter(Objects::nonNull)
                     .collect(Collectors.toSet());
         } finally {
+            if (originalPoolSize == null) {
+                System.getProperties().remove(PARALLELISM);
+            } else {
+                System.setProperty(PARALLELISM, originalPoolSize);
+            }
             System.out.println("resolving time: " + (System.currentTimeMillis() - start));
         }
     }

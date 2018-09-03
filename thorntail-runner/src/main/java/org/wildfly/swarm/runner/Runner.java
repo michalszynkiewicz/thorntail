@@ -95,9 +95,10 @@ public class Runner {
         File fatJar = File.createTempFile("wfswarm-user-app", ".jar");
         buildJar(fatJar);
 
-        System.out.println("Built " + fatJar.getAbsolutePath() + ", the file will be deleted on shutdown. To keep it, use -D" + PRESERVE_JAR);
 
         if (System.getProperties().getProperty(PRESERVE_JAR) == null) {
+            // mstodo not working
+            System.out.println("Built " + fatJar.getAbsolutePath() + ", the file will be deleted on shutdown. To keep it, use -D" + PRESERVE_JAR);
             fatJar.deleteOnExit();
         }
 
