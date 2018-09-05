@@ -19,14 +19,14 @@ import static org.wildfly.swarm.tools.ArtifactSpec.fromMavenDependencyDescriptio
  * <br>
  * Date: 8/31/18
  */
-public class SimpleArtifactResolvingHelperTest {
+public class CachingArtifactResolvingHelperTest {
 
-    private static SimpleArtifactResolvingHelper helper;
+    private static CachingArtifactResolvingHelper helper;
 
 
     @BeforeClass
     public static void init() throws NoLocalRepositoryManagerException {
-        helper = new SimpleArtifactResolvingHelper();
+        helper = new CachingArtifactResolvingHelper();
     }
 
     @Test

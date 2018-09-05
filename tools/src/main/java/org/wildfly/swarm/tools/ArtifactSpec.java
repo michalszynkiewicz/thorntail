@@ -27,7 +27,7 @@ public class ArtifactSpec extends MavenArtifactDescriptor {
 
     public final String scope;
 
-    public final String sha1sum;
+    public String sha1sum;
 
     public File file;
 
@@ -69,9 +69,9 @@ public class ArtifactSpec extends MavenArtifactDescriptor {
 
     public static ArtifactSpec fromMavenDependencyDescription(String description) {
         String[] parts = description.split("#");
-        String[] gavc = parts[0].split(":");
-        String checkSum = parts[1];
-        return new ArtifactSpec(gavc[0], gavc[1], gavc[2], gavc.length > 3 ? gavc[3] : null, checkSum);
+        ArtifactSpec result = fromMscGav(parts[0]);
+        result.sha1sum = parts[1];
+        return result;
     }
 
     public FractionDescriptor toFractionDescriptor() {
@@ -106,5 +106,4 @@ public class ArtifactSpec extends MavenArtifactDescriptor {
     public String toString() {
         return mavenGav() + " [" + this.scope + "]";
     }
-
 }

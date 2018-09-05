@@ -1,3 +1,4 @@
+
 /**
  * Copyright 2015-2017 Red Hat, Inc, and individual contributors.
  * <p>
@@ -26,7 +27,6 @@ import org.eclipse.aether.collection.CollectResult;
 import org.eclipse.aether.collection.DependencyCollectionException;
 import org.eclipse.aether.connector.basic.BasicRepositoryConnectorFactory;
 import org.eclipse.aether.graph.Dependency;
-import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.aether.impl.DefaultServiceLocator;
 import org.eclipse.aether.repository.LocalRepository;
 import org.eclipse.aether.repository.Proxy;
@@ -34,7 +34,6 @@ import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.resolution.ArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactResolutionException;
 import org.eclipse.aether.resolution.ArtifactResult;
-import org.eclipse.aether.resolution.DependencyResolutionException;
 import org.eclipse.aether.spi.connector.RepositoryConnectorFactory;
 import org.eclipse.aether.spi.connector.transport.TransporterFactory;
 import org.eclipse.aether.transport.file.FileTransporterFactory;
@@ -46,9 +45,9 @@ import org.eclipse.aether.util.graph.transformer.NearestVersionSelector;
 import org.eclipse.aether.util.graph.transformer.SimpleOptionalitySelector;
 import org.eclipse.aether.util.graph.visitor.PreorderNodeListGenerator;
 import org.eclipse.aether.util.repository.AuthenticationBuilder;
+import org.wildfly.swarm.maven.utils.RepositorySystemSessionWrapper;
 import org.wildfly.swarm.tools.ArtifactResolvingHelper;
 import org.wildfly.swarm.tools.ArtifactSpec;
-import org.wildfly.swarm.maven.utils.RepositorySystemSessionWrapper;
 
 import java.io.File;
 import java.nio.file.Paths;
@@ -63,14 +62,14 @@ import java.util.stream.Stream;
 
 /**
  * mstodo: policy for releases and snapshots?
- * <p>
- * mstodo: bundles are resolved wrong, they should be translated to jar, see  org.jboss:jandex:bundle:2.0.3.Final
+ * mstodo: failed resolution will get cached which would result in not being able to run the app even if
+ * some missing repo is added.
  */
-public class SimpleArtifactResolvingHelper implements ArtifactResolvingHelper {
+public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
 
     public static final String PARALLELISM = "java.util.concurrent.ForkJoinPool.common.parallelism";
 
-    public SimpleArtifactResolvingHelper() {
+    public CachingArtifactResolvingHelper() {
         repoSystem = newRepositorySystem();
 
         session = newSession(repoSystem);
@@ -92,11 +91,15 @@ public class SimpleArtifactResolvingHelper implements ArtifactResolvingHelper {
 
     @Override
     public ArtifactSpec resolve(ArtifactSpec spec) {
+        return resolve(spec, false);
+    }
+
+    public ArtifactSpec resolve(ArtifactSpec spec, boolean localOnly) {
         try {
             if (spec.file == null) {
                 final DefaultArtifact artifact = artifact(spec);
 
-                ArtifactResult result = resolveArtifact(artifact);
+                ArtifactResult result = resolveArtifact(artifact, localOnly);
 
                 if (result.isResolved()) {
                     spec.file = result.getArtifact().getFile();
@@ -111,13 +114,11 @@ public class SimpleArtifactResolvingHelper implements ArtifactResolvingHelper {
 
     @Override
     public Set<ArtifactSpec> resolveAll(Collection<ArtifactSpec> specs, boolean transitive, boolean defaultExcludes) throws Exception {
-        // mstodo support defaultExcludes?; requires pulling out the session wrapper from maven plugin
         if (specs.isEmpty()) {
             return Collections.emptySet();
         }
         Collection<ArtifactSpec> toResolve = specs;
         if (transitive) {
-
             toResolve = resolveDependencies(specs, defaultExcludes);
         }
         long start = System.currentTimeMillis(); // mstodo better time logging
@@ -176,7 +177,6 @@ public class SimpleArtifactResolvingHelper implements ArtifactResolvingHelper {
         DefaultRepositorySystemSession session = MavenRepositorySystemUtils.newSession();
 
         LocalRepository localRepo = new LocalRepository(localRepoLocation()); // mstodo support different location
-        // mstodo test on windows
         session.setLocalRepositoryManager(system.newLocalRepositoryManager(session, localRepo));
 
         return session;
@@ -192,79 +192,106 @@ public class SimpleArtifactResolvingHelper implements ArtifactResolvingHelper {
             }
         } else {
             String userHome = System.getProperty("user.home");
-            result = Paths.get(userHome, ".m2", "repository").toFile();
+            result = Paths.get(userHome, ".m2", "repository").toFile();      // mstodo maybe use thorntail-runner-cache if it does not exist?
         }
         return result;
     }
 
-    private Collection<ArtifactSpec> resolveDependencies(Collection<ArtifactSpec> specs, boolean defaultExcludes) throws DependencyResolutionException, DependencyCollectionException {
+    private Collection<ArtifactSpec> resolveDependencies(final Collection<ArtifactSpec> specs, boolean defaultExcludes) throws DependencyCollectionException {
         long start = System.currentTimeMillis();
-        System.out.println("resolving dependencies");
-        Collection<ArtifactSpec> toResolve;
-        List<Dependency> dependencies =
-                specs.stream()
-                        .map(this::artifact)
-                        .map(a -> new Dependency(a, "compile"))
-                        .collect(Collectors.toList());
+        List<ArtifactSpec> dependencyNodes = dependencyCache.getCachedDependencies(specs, defaultExcludes);
+        if (dependencyNodes == null) {
+            System.out.println("no cached dependencies, " + defaultExcludes + ", resolving dependencies. Query: " + specs); // mstodo remove
+            List<Dependency> dependencies =
+                    specs.stream()
+                            .map(this::artifact)
+                            .map(a -> new Dependency(a, "compile"))
+                            .collect(Collectors.toList());
 
-        CollectRequest collectRequest = new CollectRequest(dependencies, null, remoteRepositories);
+            CollectRequest collectRequest = new CollectRequest(dependencies, null, remoteRepositories);
 
 
-        RepositorySystemSession tempSession
-                = new RepositorySystemSessionWrapper(this.session,
-                new ConflictResolver(new NearestVersionSelector(),
-                        new JavaScopeSelector(),
-                        new SimpleOptionalitySelector(),
-                        new JavaScopeDeriver()
-                ), defaultExcludes
-        );
-        CollectResult result = this.repoSystem.collectDependencies(tempSession, collectRequest);
-        PreorderNodeListGenerator gen = new PreorderNodeListGenerator();
-        result.getRoot().accept(gen);
-        List<DependencyNode> nodes = gen.getNodes();
+            RepositorySystemSession tempSession
+                    = new RepositorySystemSessionWrapper(this.session,
+                    new ConflictResolver(new NearestVersionSelector(),
+                            new JavaScopeSelector(),
+                            new SimpleOptionalitySelector(),
+                            new JavaScopeDeriver()
+                    ), defaultExcludes
+            );
+            CollectResult result = this.repoSystem.collectDependencies(tempSession, collectRequest);
+            PreorderNodeListGenerator gen = new PreorderNodeListGenerator();
+            result.getRoot().accept(gen);
+            dependencyNodes = gen.getNodes()
+                    .stream()
+                    .map(
+                            node -> {
+                                Artifact artifact = node.getArtifact();
+                                return new ArtifactSpec(node.getDependency().getScope(),
+                                        artifact.getGroupId(),
+                                        artifact.getArtifactId(),
+                                        artifact.getVersion(),
+                                        artifact.getExtension(),
+                                        artifact.getClassifier(),
+                                        artifact.getFile());
+                            }
+                    ).collect(Collectors.toList());
 
-        resolveDependenciesInParallel(nodes);
 
-        return nodes.stream()
-                .filter(node -> !"system".equals(node.getDependency().getScope()))
-                .map(node -> {
-                    final Artifact artifact = node.getArtifact();
-                    return new ArtifactSpec(node.getDependency().getScope(),
-                            artifact.getGroupId(),
-                            artifact.getArtifactId(),
-                            artifact.getVersion(),
-                            artifact.getExtension(),
-                            artifact.getClassifier(),
-                            null);
-                })
-                .map(this::resolve)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
+            dependencyCache.storeCachedDependencies(specs, dependencyNodes, defaultExcludes);
+        }
+        System.out.println("dependency analysis time: " + (System.currentTimeMillis() - start) + "[ms]");
+        start = System.currentTimeMillis();
+
+        Collection<ArtifactSpec> result = resolveDependencies(dependencyNodes);
+        System.out.println("dependency resolution time: " + (System.currentTimeMillis() - start) + "[ms]");
+        return result;
+    }
+
+    private Collection<ArtifactSpec> resolveDependencies(List<ArtifactSpec> dependencyNodes) {
+        long start = System.currentTimeMillis();
+        boolean localResolutionOnly;
+        // if dependencies were previously resolved, we don't need to resolve using remote repositories
+        if (!dependencyCache.areResolved(dependencyNodes)) {
+            resolveDependenciesInParallel(dependencyNodes);
+            dependencyCache.markResolved(dependencyNodes);
+            localResolutionOnly = false;
+        } else {
+            localResolutionOnly = true;
+        }
+        System.out.println("parallel resolution time: " + (System.currentTimeMillis() - start));
+
+        try {
+            return dependencyNodes.stream()
+                    .filter(node -> !"system".equals(node.scope))
+                    .map(node -> new ArtifactSpec(node.scope,
+                            node.groupId(),
+                            node.artifactId(),
+                            node.version(),
+                            "bundle".equals(node.type()) ? "jar" : node.type(),
+                            node.classifier(),
+                            null))
+                    .map(a -> resolve(a, localResolutionOnly))
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+        } finally {
+            System.out.println("total time of dep resolution: " + (System.currentTimeMillis() - start));
+        }
     }
 
     /**
      * This is needed to speed up things.
      */
-    private void resolveDependenciesInParallel(List<DependencyNode> nodes) {
+    private void resolveDependenciesInParallel(List<ArtifactSpec> nodes) {
         List<ArtifactRequest> artifactRequests = nodes.stream()
-                .map(node -> new ArtifactRequest(node.getArtifact(), this.remoteRepositories, null))
+                .map(spec -> new DefaultArtifact(spec.groupId(), spec.artifactId(), spec.classifier(), spec.type(), spec.version()))
+                .map(node -> new ArtifactRequest(node, this.remoteRepositories, null))
                 .collect(Collectors.toList());
 
         try {
             this.repoSystem.resolveArtifacts(this.session, artifactRequests);
         } catch (ArtifactResolutionException e) {
         }
-    }
-
-    private ArtifactSpec toSpec(Artifact artifact) {
-        ArtifactSpec spec = new ArtifactSpec("compile", // mstodo is this okay?
-                artifact.getGroupId(),
-                artifact.getArtifactId(),
-                artifact.getVersion(),
-                artifact.getExtension(),
-                artifact.getClassifier(),
-                null);
-        return spec;
     }
 
     private DefaultArtifact artifact(ArtifactSpec spec) {
@@ -274,12 +301,20 @@ public class SimpleArtifactResolvingHelper implements ArtifactResolvingHelper {
                 type, spec.version());
     }
 
-    private ArtifactResult resolveArtifact(DefaultArtifact artifact) throws ArtifactResolutionException {
+    private ArtifactResult resolveArtifact(DefaultArtifact artifact, boolean localOnly) throws ArtifactResolutionException {
         ArtifactRequest request = new ArtifactRequest();
         request.setArtifact(artifact);
-
-        remoteRepositories.forEach(request::addRepository);
-        return repoSystem.resolveArtifact(session, request);
+        // try local resolution first, fallback to remote repos if not found
+        try {
+            return repoSystem.resolveArtifact(session, request);
+        } catch (ArtifactResolutionException e) {
+            if (localOnly) {
+                throw e;
+            } else {
+                remoteRepositories.forEach(request::addRepository);
+                return repoSystem.resolveArtifact(session, request);
+            }
+        }
     }
 
 
@@ -315,6 +350,7 @@ public class SimpleArtifactResolvingHelper implements ArtifactResolvingHelper {
         return repository;
     }
 
+    private final DependencyCache dependencyCache = new DependencyCache();
     private final List<RemoteRepository> remoteRepositories = new ArrayList<>();
     private final RepositorySystem repoSystem;
     private final RepositorySystemSession session;

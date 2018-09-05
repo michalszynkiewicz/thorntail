@@ -110,7 +110,7 @@ public class FatJarBuilder {
         System.out.println("Classpath analyzing time: " + (System.currentTimeMillis() - start + " ms"));
 
         File war = buildWar(classPathEntries);
-        final BuildTool tool = new BuildTool(new SimpleArtifactResolvingHelper(), true)
+        final BuildTool tool = new BuildTool(new CachingArtifactResolvingHelper(), true)
                 .projectArtifact("tt",
                         "wfswarm-user-app",
                         "0.1-SNAPSHOT",

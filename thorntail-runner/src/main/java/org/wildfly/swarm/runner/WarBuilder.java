@@ -106,7 +106,7 @@ public class WarBuilder {
     private void addJarToWar(File file) {
         String jarName = file.getName();
         try {
-            writeFileToZip(file, "WEB-INF/lib/" + jarName); // mstodo: test on windows
+            writeFileToZip(file, "WEB-INF/lib/" + jarName);
         } catch (IOException e) {
             throw new RuntimeException("Failed to add jar " + file.getAbsolutePath() + " to war", e);
         }
@@ -117,7 +117,6 @@ public class WarBuilder {
         if (file.isFile()) {
             try {
                 String projectDir = Paths.get("src", "main", "webapp").toFile().getAbsolutePath();
-                // mstodo test on windows!
 
                 String fileName = file.getAbsolutePath().replace(projectDir, "");
                 writeFileToZip(file, fileName);
