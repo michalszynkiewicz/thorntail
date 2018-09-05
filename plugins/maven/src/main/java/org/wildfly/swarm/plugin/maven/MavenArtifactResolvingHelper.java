@@ -46,6 +46,7 @@ import org.eclipse.aether.util.graph.visitor.PreorderNodeListGenerator;
 import org.eclipse.aether.util.repository.AuthenticationBuilder;
 import org.wildfly.swarm.tools.ArtifactResolvingHelper;
 import org.wildfly.swarm.tools.ArtifactSpec;
+import org.wildfly.swarm.maven.utils.RepositorySystemSessionWrapper;
 
 import java.util.ArrayList;
 import java.util.Collection;
