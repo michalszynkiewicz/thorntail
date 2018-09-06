@@ -122,16 +122,19 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
             toResolve = resolveDependencies(specs, defaultExcludes);
         }
         long start = System.currentTimeMillis(); // mstodo better time logging
+        boolean localResolutionOnly = dependencyCache.areResolved(toResolve);
         System.out.println("resolving artifacts");
         String originalPoolSize = System.getProperty(PARALLELISM);
         try {
             // mstodo waaay to slow
             // mstodo try simple parallelism with 20 threads? 10?
             System.setProperty(PARALLELISM, "20");
-            return toResolve.parallelStream()
-                    .map(this::resolve)
+            Set<ArtifactSpec> result = toResolve.parallelStream()
+                    .map(a -> resolve(a, localResolutionOnly))
                     .filter(Objects::nonNull)
                     .collect(Collectors.toSet());
+            dependencyCache.markResolved(toResolve);
+            return result;
         } finally {
             if (originalPoolSize == null) {
                 System.getProperties().remove(PARALLELISM);
@@ -350,7 +353,7 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
         return repository;
     }
 
-    private final DependencyCache dependencyCache = new DependencyCache();
+    private final DependencyCache dependencyCache = DependencyCache.INSTANCE;
     private final List<RemoteRepository> remoteRepositories = new ArrayList<>();
     private final RepositorySystem repoSystem;
     private final RepositorySystemSession session;

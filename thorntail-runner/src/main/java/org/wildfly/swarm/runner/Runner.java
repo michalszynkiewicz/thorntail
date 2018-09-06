@@ -62,22 +62,42 @@ import static java.util.Arrays.asList;
  *         By default Runner searches for artifacts in Maven Central and repository.jboss.org.
  *         Expects a comma separated list of repositoryUrl[:username:password]
  *     </li>
+ *     <li>
+ *         <b>thorntail.runner.caching</b> - enable artifact resolution caching.
+ *         If the property is present, Runner will cache info about resolved artifacts.
+ *         Running without the property set clears this cache prior to execution.
+ *     </li>
  * </ul>
  */
 public class Runner {
 
     private static final String PRESERVE_JAR = "thorntail.runner.preserve-jar";
+    private static final String THORNTAIL_RUNNER_CACHING = "thorntail.runner.caching";
 
     private Runner() {
     }
 
     public static void main(String[] args) throws Exception {
+        System.out.printf("Starting Thorntail Runner. Runner caches will be started in %s\n", DependencyCache.THORNTAIL_RUNNER_CACHE);
+        if (System.getProperty(THORNTAIL_RUNNER_CACHING) == null) {
+            System.out.printf("Only limited caching is enabled, to use full caching capabilities, add -D%s parameter\n",
+                    THORNTAIL_RUNNER_CACHING);
+            clearCaches();
+        }
         URLClassLoader loader = createClassLoader();
+        run((Object) args, loader);
+    }
+
+    private static void clearCaches() {
+        DependencyCache.INSTANCE.clearResolvedMarks();
+    }
+
+    private static void run(Object args, URLClassLoader loader) throws Exception {
         callWithClassloader(loader,
                 "org.wildfly.swarm.bootstrap.Main",
                 "main",
                 new Class<?>[]{String[].class},
-                (Object) args);
+                args);
     }
 
     private static <T> T callWithClassloader(ClassLoader loader,

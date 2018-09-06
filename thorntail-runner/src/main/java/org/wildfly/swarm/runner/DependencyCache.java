@@ -23,6 +23,8 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -37,7 +39,11 @@ import java.util.stream.Collectors;
  */
 public class DependencyCache {
 
-    public static final String THORNTAIL_RUNNER_CACHE = "thorntail-runner-cache";
+    private static final String RESOLVED = "-resolved";
+
+    public static final String THORNTAIL_RUNNER_CACHE = ".thorntail-runner-cache";
+
+    public static final DependencyCache INSTANCE = new DependencyCache();
 
     public List<ArtifactSpec> getCachedDependencies(Collection<ArtifactSpec> specs, boolean defaultExcludes) {
         File cacheFile = getCacheFile(specs, defaultExcludes);
@@ -112,7 +118,7 @@ public class DependencyCache {
         }
     }
 
-    public void markResolved(List<ArtifactSpec> dependencyNodes) {
+    public void markResolved(Collection<ArtifactSpec> dependencyNodes) {
         try {
             File resolvedMark = getResolvedMark(dependencyNodes);
             if (!resolvedMark.exists()) {
@@ -125,7 +131,7 @@ public class DependencyCache {
     }
 
 
-    public boolean areResolved(List<ArtifactSpec> dependencyNodes) {
+    public boolean areResolved(Collection<ArtifactSpec> dependencyNodes) {
         try {
             File resolvedMark = getResolvedMark(dependencyNodes);
             return resolvedMark.exists();
@@ -134,8 +140,23 @@ public class DependencyCache {
         }
     }
 
-    private File getResolvedMark(List<ArtifactSpec> dependencyNodes) throws NoSuchAlgorithmException {
+    private File getResolvedMark(Collection<ArtifactSpec> dependencyNodes) throws NoSuchAlgorithmException {
         String cacheKey = getCacheKey(dependencyNodes);
-        return Paths.get(THORNTAIL_RUNNER_CACHE, cacheKey + "-resolved").toFile();
+        return Paths.get(THORNTAIL_RUNNER_CACHE, cacheKey + RESOLVED).toFile();
+    }
+
+    public void clearResolvedMarks() {
+        try {
+            Files.walk(Paths.get(THORNTAIL_RUNNER_CACHE))
+                    .filter(p -> p.toString().endsWith(RESOLVED))
+                    .map(Path::toFile)
+                    .forEach(File::delete);
+        } catch (IOException e) {
+            System.err.println("failed to clear resolution cache");
+            e.printStackTrace();
+        }
+    }
+
+    private DependencyCache() {
     }
 }

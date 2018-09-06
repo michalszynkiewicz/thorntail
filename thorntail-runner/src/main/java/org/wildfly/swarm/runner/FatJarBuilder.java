@@ -294,6 +294,7 @@ public class FatJarBuilder {
                     new File(jarPath));
         } catch (Exception e) {
             throw new RuntimeException("Failed to read artifact spec from pom " + pom, e);
+            // mstodo ignore ?
         }
     }
 
