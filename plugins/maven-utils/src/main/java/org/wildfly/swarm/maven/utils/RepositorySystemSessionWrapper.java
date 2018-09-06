@@ -39,6 +39,11 @@ import org.eclipse.aether.repository.WorkspaceReader;
 import org.eclipse.aether.resolution.ArtifactDescriptorPolicy;
 import org.eclipse.aether.resolution.ResolutionErrorPolicy;
 import org.eclipse.aether.transfer.TransferListener;
+import org.eclipse.aether.util.graph.transformer.ConflictResolver;
+import org.eclipse.aether.util.graph.transformer.JavaScopeDeriver;
+import org.eclipse.aether.util.graph.transformer.JavaScopeSelector;
+import org.eclipse.aether.util.graph.transformer.NearestVersionSelector;
+import org.eclipse.aether.util.graph.transformer.SimpleOptionalitySelector;
 import org.wildfly.swarm.fractions.FractionDescriptor;
 
 /**
@@ -46,13 +51,13 @@ import org.wildfly.swarm.fractions.FractionDescriptor;
  */
 public final class RepositorySystemSessionWrapper implements RepositorySystemSession {
 
-    public RepositorySystemSessionWrapper(RepositorySystemSession delegate, DependencyGraphTransformer transformer) {
-        this(delegate, transformer, false);
-    }
-
-    public RepositorySystemSessionWrapper(RepositorySystemSession delegate, DependencyGraphTransformer transformer, boolean excludeSwarm) {
+    public RepositorySystemSessionWrapper(RepositorySystemSession delegate, boolean excludeSwarm) {
         this.delegate = delegate;
-        this.transformer = transformer;
+        this.transformer = new ConflictResolver(new NearestVersionSelector(),
+                new JavaScopeSelector(),
+                new SimpleOptionalitySelector(),
+                new JavaScopeDeriver()
+        );
         this.excludeSwarm = excludeSwarm;
     }
 

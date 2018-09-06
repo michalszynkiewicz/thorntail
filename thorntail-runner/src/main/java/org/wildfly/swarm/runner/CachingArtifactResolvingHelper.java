@@ -96,6 +96,7 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
     public ArtifactSpec resolve(ArtifactSpec spec, boolean localOnly) {
         try {
             if (spec.file == null) {
+
                 final DefaultArtifact artifact = artifact(spec);
 
                 ArtifactResult result = resolveArtifact(artifact, localOnly);
@@ -195,6 +196,7 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
         } else {
             String userHome = System.getProperty("user.home");
             result = Paths.get(userHome, ".m2", "repository").toFile();      // mstodo maybe use thorntail-runner-cache if it does not exist?
+            // mstodo check if exists, ask user to create or point to a different location?
         }
         return result;
     }
@@ -203,7 +205,6 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
         long start = System.currentTimeMillis();
         List<ArtifactSpec> dependencyNodes = dependencyCache.getCachedDependencies(specs, defaultExcludes);
         if (dependencyNodes == null) {
-            System.out.println("no cached dependencies, " + defaultExcludes + ", resolving dependencies. Query: " + specs); // mstodo remove
             List<Dependency> dependencies =
                     specs.stream()
                             .map(this::artifact)
@@ -213,15 +214,8 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
             CollectRequest collectRequest = new CollectRequest(dependencies, null, remoteRepositories);
 
 
-            RepositorySystemSession tempSession
-                    = new RepositorySystemSessionWrapper(this.session,
-                    new ConflictResolver(new NearestVersionSelector(),
-                            new JavaScopeSelector(),
-                            new SimpleOptionalitySelector(),
-                            new JavaScopeDeriver()
-                    ), defaultExcludes
-            );
-            CollectResult result = this.repoSystem.collectDependencies(tempSession, collectRequest);
+            RepositorySystemSession session = new RepositorySystemSessionWrapper(this.session, defaultExcludes);
+            CollectResult result = this.repoSystem.collectDependencies(session, collectRequest);
             PreorderNodeListGenerator gen = new PreorderNodeListGenerator();
             result.getRoot().accept(gen);
             dependencyNodes = gen.getNodes()

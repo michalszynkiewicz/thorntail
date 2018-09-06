@@ -158,12 +158,7 @@ public class MavenArtifactResolvingHelper implements ArtifactResolvingHelper {
                                                   "compile")));
 
             RepositorySystemSession tempSession
-                    = new RepositorySystemSessionWrapper(this.session,
-                                                         new ConflictResolver(new NearestVersionSelector(),
-                                                                              new JavaScopeSelector(),
-                                                                              new SimpleOptionalitySelector(),
-                                                                              new JavaScopeDeriver()
-                                                         ), defaultExcludes
+                    = new RepositorySystemSessionWrapper(this.session, defaultExcludes
             );
             CollectResult result = this.system.collectDependencies(tempSession, request);
             PreorderNodeListGenerator gen = new PreorderNodeListGenerator();
