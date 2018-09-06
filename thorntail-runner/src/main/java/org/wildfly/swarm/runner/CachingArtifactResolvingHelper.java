@@ -62,8 +62,7 @@ import java.util.stream.Stream;
 
 /**
  * mstodo: policy for releases and snapshots?
- * mstodo: failed resolution will get cached which would result in not being able to run the app even if
- * some missing repo is added.
+ * mstodo: failed resolution will get cached which would result in not being able to run the app even if some missing repo is added.
  */
 public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
 
@@ -85,7 +84,7 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
                 null,
                 null));
 
-        // MSTODO: test by removing central and adding it with property
+        // MSTODO: test by removing central and adding it with a property
         addUserRepositories();
     }
 
@@ -179,7 +178,7 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
     private static RepositorySystemSession newSession(RepositorySystem system) {
         DefaultRepositorySystemSession session = MavenRepositorySystemUtils.newSession();
 
-        LocalRepository localRepo = new LocalRepository(localRepoLocation()); // mstodo support different location
+        LocalRepository localRepo = new LocalRepository(localRepoLocation());
         session.setLocalRepositoryManager(system.newLocalRepositoryManager(session, localRepo));
 
         return session;

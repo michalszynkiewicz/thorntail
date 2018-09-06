@@ -51,49 +51,6 @@ public class DependencyCache {
         return readDependencies(cacheFile);
     }
 
-    private File getCacheFile(Collection<ArtifactSpec> specs, boolean defaultExcludes) {
-        String key = null;
-        try {
-            key = getCacheKey(specs);
-        } catch (NoSuchAlgorithmException e) {
-            System.err.println("No SHA-1 digest algorithm found, caching is disabled");
-            return null;
-        }
-
-        return Paths.get(THORNTAIL_RUNNER_CACHE, key + (defaultExcludes ? "-with-excludes" : "")).toFile();
-    }
-
-
-    private List<ArtifactSpec> readDependencies(File cacheFile) {
-        if (cacheFile == null) {
-            return null;
-        }
-        try (FileReader fileReader = new FileReader(cacheFile);
-             BufferedReader reader = new BufferedReader(fileReader)) {
-            return reader.lines()
-                    .filter(line -> !line.isEmpty())
-                    .map(ArtifactSpec::fromMscGav)
-                    .collect(Collectors.toList());
-        } catch (IOException e) {
-            return null;
-        }
-    }
-
-
-    private String getCacheKey(Collection<ArtifactSpec> specs) throws NoSuchAlgorithmException {
-        MessageDigest sha1Digest = MessageDigest.getInstance("SHA-1");
-        specs.stream()
-                .map(ArtifactSpec::jarName)
-                .sorted()
-                .forEach(
-                        jarName -> sha1Digest.update(jarName.getBytes())
-                );
-
-        byte[] resultBytes = sha1Digest.digest();
-
-        return ChecksumUtils.toHexString(resultBytes);
-    }
-
     public void storeCachedDependencies(Collection<ArtifactSpec> specs, List<ArtifactSpec> dependencySpecs, boolean defaultExcludes) {
         File cacheFile = getCacheFile(specs, defaultExcludes);
 
@@ -140,11 +97,6 @@ public class DependencyCache {
         }
     }
 
-    private File getResolvedMark(Collection<ArtifactSpec> dependencyNodes) throws NoSuchAlgorithmException {
-        String cacheKey = getCacheKey(dependencyNodes);
-        return Paths.get(THORNTAIL_RUNNER_CACHE, cacheKey + RESOLVED).toFile();
-    }
-
     public void clearResolvedMarks() {
         try {
             Files.walk(Paths.get(THORNTAIL_RUNNER_CACHE))
@@ -155,6 +107,54 @@ public class DependencyCache {
             System.err.println("failed to clear resolution cache");
             e.printStackTrace();
         }
+    }
+
+    private File getCacheFile(Collection<ArtifactSpec> specs, boolean defaultExcludes) {
+        String key = null;
+        try {
+            key = getCacheKey(specs);
+        } catch (NoSuchAlgorithmException e) {
+            System.err.println("No SHA-1 digest algorithm found, caching is disabled");
+            return null;
+        }
+
+        return Paths.get(THORNTAIL_RUNNER_CACHE, key + (defaultExcludes ? "-with-excludes" : "")).toFile();
+    }
+
+
+    private List<ArtifactSpec> readDependencies(File cacheFile) {
+        if (cacheFile == null) {
+            return null;
+        }
+        try (FileReader fileReader = new FileReader(cacheFile);
+             BufferedReader reader = new BufferedReader(fileReader)) {
+            return reader.lines()
+                    .filter(line -> !line.isEmpty())
+                    .map(ArtifactSpec::fromMscGav)
+                    .collect(Collectors.toList());
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+
+    private String getCacheKey(Collection<ArtifactSpec> specs) throws NoSuchAlgorithmException {
+        MessageDigest sha1Digest = MessageDigest.getInstance("SHA-1");
+        specs.stream()
+                .map(ArtifactSpec::jarName)
+                .sorted()
+                .forEach(
+                        jarName -> sha1Digest.update(jarName.getBytes())
+                );
+
+        byte[] resultBytes = sha1Digest.digest();
+
+        return ChecksumUtils.toHexString(resultBytes);
+    }
+
+    private File getResolvedMark(Collection<ArtifactSpec> dependencyNodes) throws NoSuchAlgorithmException {
+        String cacheKey = getCacheKey(dependencyNodes);
+        return Paths.get(THORNTAIL_RUNNER_CACHE, cacheKey + RESOLVED).toFile();
     }
 
     private DependencyCache() {
