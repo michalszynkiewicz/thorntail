@@ -87,7 +87,7 @@ public class WarBuilder {
 
     private Path getWebAppLocation() {
         Path webappPath;
-
+        // TODO: if maven project - check in the pom if it's not different than default
         String webappLocationProperty = System.getProperty("thorntail.runner.webapp-location");
 
         if (webappLocationProperty != null) {

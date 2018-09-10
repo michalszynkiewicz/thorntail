@@ -174,6 +174,9 @@ public class FatJarBuilder {
         File jar = tool.build(target.getName(), target.getParentFile().toPath());
 
         tool.repackageWar(war);
+
+        DependencyCache.INSTANCE.store();
+
         return jar;
     }
 
@@ -249,7 +252,7 @@ public class FatJarBuilder {
 
             ArtifactSpec spec = maybePomXml
                     .map(pom -> toArtifactSpec(pom, file))
-                    .orElse(mockArtifactSpec(file));
+                    .orElse(mockArtifactSpec(file)); // we should probably just skip'em
             return ArtifactOrFile.spec(spec);
         } catch (IOException e) {
             throw new RuntimeException("Failed to parse jar: " + file, e);
@@ -293,8 +296,7 @@ public class FatJarBuilder {
                     groupId, artifactId, version, packaging, classifier,
                     new File(jarPath));
         } catch (Exception e) {
-            throw new RuntimeException("Failed to read artifact spec from pom " + pom, e);
-            // mstodo ignore ?
+            throw new RuntimeException("Failed to read artifact spec from pom " + pom + " you may have an invalid jar downloaded.", e);
         }
     }
 

@@ -38,11 +38,6 @@ import org.eclipse.aether.spi.connector.RepositoryConnectorFactory;
 import org.eclipse.aether.spi.connector.transport.TransporterFactory;
 import org.eclipse.aether.transport.file.FileTransporterFactory;
 import org.eclipse.aether.transport.http.HttpTransporterFactory;
-import org.eclipse.aether.util.graph.transformer.ConflictResolver;
-import org.eclipse.aether.util.graph.transformer.JavaScopeDeriver;
-import org.eclipse.aether.util.graph.transformer.JavaScopeSelector;
-import org.eclipse.aether.util.graph.transformer.NearestVersionSelector;
-import org.eclipse.aether.util.graph.transformer.SimpleOptionalitySelector;
 import org.eclipse.aether.util.graph.visitor.PreorderNodeListGenerator;
 import org.eclipse.aether.util.repository.AuthenticationBuilder;
 import org.wildfly.swarm.maven.utils.RepositorySystemSessionWrapper;
@@ -62,7 +57,6 @@ import java.util.stream.Stream;
 
 /**
  * mstodo: policy for releases and snapshots?
- * mstodo: failed resolution will get cached which would result in not being able to run the app even if some missing repo is added.
  */
 public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
 
@@ -90,26 +84,22 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
 
     @Override
     public ArtifactSpec resolve(ArtifactSpec spec) {
-        return resolve(spec, false);
-    }
-
-    public ArtifactSpec resolve(ArtifactSpec spec, boolean localOnly) {
-        try {
-            if (spec.file == null) {
-
-                final DefaultArtifact artifact = artifact(spec);
-
-                ArtifactResult result = resolveArtifact(artifact, localOnly);
-
-                if (result.isResolved()) {
-                    spec.file = result.getArtifact().getFile();
-                }
+        if (spec.file == null) {
+            File maybeFile = dependencyCache.getCachedFile(spec);
+            if (!dependencyCache.isFailureToResolveStored(spec) && maybeFile == null) {
+                System.out.println("no cached file for " + spec.mscGav());
+                maybeFile = getArtifactFile(spec);
+                dependencyCache.storeArtifactFile(spec, maybeFile);
             }
-        } catch (ArtifactResolutionException e) {
-            e.printStackTrace(); // ignoring
+
+            if (maybeFile == null) {
+                dependencyCache.storeResolutionFailure(spec);
+                return null;
+            }
+            spec.file = maybeFile;
         }
 
-        return spec.file != null ? spec : null;
+        return spec;
     }
 
     @Override
@@ -121,8 +111,8 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
         if (transitive) {
             toResolve = resolveDependencies(specs, defaultExcludes);
         }
+
         long start = System.currentTimeMillis(); // mstodo better time logging
-        boolean localResolutionOnly = dependencyCache.areResolved(toResolve);
         System.out.println("resolving artifacts");
         String originalPoolSize = System.getProperty(PARALLELISM);
         try {
@@ -130,10 +120,9 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
             // mstodo try simple parallelism with 20 threads? 10?
             System.setProperty(PARALLELISM, "20");
             Set<ArtifactSpec> result = toResolve.parallelStream()
-                    .map(a -> resolve(a, localResolutionOnly))
+                    .map(this::resolve)
                     .filter(Objects::nonNull)
                     .collect(Collectors.toSet());
-            dependencyCache.markResolved(toResolve);
             return result;
         } finally {
             if (originalPoolSize == null) {
@@ -246,19 +235,18 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
 
     private Collection<ArtifactSpec> resolveDependencies(List<ArtifactSpec> dependencyNodes) {
         long start = System.currentTimeMillis();
-        boolean localResolutionOnly;
         // if dependencies were previously resolved, we don't need to resolve using remote repositories
-        if (!dependencyCache.areResolved(dependencyNodes)) {
-            resolveDependenciesInParallel(dependencyNodes);
-            dependencyCache.markResolved(dependencyNodes);
-            localResolutionOnly = false;
-        } else {
-            localResolutionOnly = true;
-        }
+        Set<String> resolvedGavs = dependencyCache.allResolvedMscGavs();
+
+        dependencyNodes = new ArrayList<>(dependencyNodes);
+        dependencyNodes.removeIf(
+                spec -> resolvedGavs.contains(spec.mscGav())
+        );
+
         System.out.println("parallel resolution time: " + (System.currentTimeMillis() - start));
 
         try {
-            return dependencyNodes.stream()
+            return dependencyNodes.parallelStream()
                     .filter(node -> !"system".equals(node.scope))
                     .map(node -> new ArtifactSpec(node.scope,
                             node.groupId(),
@@ -267,26 +255,11 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
                             "bundle".equals(node.type()) ? "jar" : node.type(),
                             node.classifier(),
                             null))
-                    .map(a -> resolve(a, localResolutionOnly))
+                    .map(this::resolve)
                     .filter(Objects::nonNull)
                     .collect(Collectors.toSet());
         } finally {
             System.out.println("total time of dep resolution: " + (System.currentTimeMillis() - start));
-        }
-    }
-
-    /**
-     * This is needed to speed up things.
-     */
-    private void resolveDependenciesInParallel(List<ArtifactSpec> nodes) {
-        List<ArtifactRequest> artifactRequests = nodes.stream()
-                .map(spec -> new DefaultArtifact(spec.groupId(), spec.artifactId(), spec.classifier(), spec.type(), spec.version()))
-                .map(node -> new ArtifactRequest(node, this.remoteRepositories, null))
-                .collect(Collectors.toList());
-
-        try {
-            this.repoSystem.resolveArtifacts(this.session, artifactRequests);
-        } catch (ArtifactResolutionException e) {
         }
     }
 
@@ -297,19 +270,27 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
                 type, spec.version());
     }
 
-    private ArtifactResult resolveArtifact(DefaultArtifact artifact, boolean localOnly) throws ArtifactResolutionException {
+    // mstodo simplify
+    private File getArtifactFile(ArtifactSpec spec) {
         ArtifactRequest request = new ArtifactRequest();
-        request.setArtifact(artifact);
+        request.setArtifact(artifact(spec));
+        ArtifactResult artifactResult = null;
         // try local resolution first, fallback to remote repos if not found
         try {
-            return repoSystem.resolveArtifact(session, request);
-        } catch (ArtifactResolutionException e) {
-            if (localOnly) {
-                throw e;
-            } else {
-                remoteRepositories.forEach(request::addRepository);
-                return repoSystem.resolveArtifact(session, request);
+            artifactResult = repoSystem.resolveArtifact(session, request);
+        } catch (ArtifactResolutionException ignored) {
+            remoteRepositories.forEach(request::addRepository);
+            try {
+                artifactResult = repoSystem.resolveArtifact(session, request);
+            } catch (ArtifactResolutionException e) {
+                e.printStackTrace();
             }
+        }
+
+        if (artifactResult != null && artifactResult.isResolved()) {
+            return artifactResult.getArtifact().getFile();
+        } else {
+            return null;
         }
     }
 
