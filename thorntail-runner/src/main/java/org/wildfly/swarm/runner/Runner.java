@@ -15,6 +15,8 @@
  */
 package org.wildfly.swarm.runner;
 
+import org.wildfly.swarm.runner.cache.RunnerCacheConstants;
+
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -62,11 +64,6 @@ import static java.util.Arrays.asList;
  *         By default Runner searches for artifacts in Maven Central and repository.jboss.org.
  *         Expects a comma separated list of repositoryUrl[:username:password]
  *     </li>
- *     <li>
- *         <b>thorntail.runner.caching</b> - enable artifact resolution caching.
- *         If the property is present, Runner will cache info about resolved artifacts.
- *         Running without the property set clears this cache prior to execution.
- *     </li>
  * </ul>
  *
  */
@@ -78,7 +75,7 @@ public class Runner {
     }
 
     public static void main(String[] args) throws Exception {
-        System.out.printf("Starting Thorntail Runner. Runner caches will be started in %s\n", DependencyCache.CACHE_STORAGE_DIR);
+        System.out.printf("Starting Thorntail Runner. Runner caches will be started in %s\n", RunnerCacheConstants.CACHE_STORAGE_DIR);
         URLClassLoader loader = createClassLoader();
         run((Object) args, loader);
     }
@@ -108,7 +105,6 @@ public class Runner {
 
 
         if (System.getProperties().getProperty(PRESERVE_JAR) == null) {
-            // mstodo not working
             System.out.println("Built " + fatJar.getAbsolutePath() + ", the file will be deleted on shutdown. To keep it, use -D" + PRESERVE_JAR);
             fatJar.deleteOnExit();
         }

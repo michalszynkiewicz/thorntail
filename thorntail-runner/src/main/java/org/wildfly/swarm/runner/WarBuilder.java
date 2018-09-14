@@ -47,10 +47,6 @@ public class WarBuilder {
         return war;
     }
 
-    private final ZipOutputStream output;
-    private final List<String> classesDirs;
-    private final List<File> jars;
-
     private WarBuilder(ZipOutputStream output, List<String> classesDirs, List<File> jars) {
         this.output = output;
         this.classesDirs = classesDirs;
@@ -168,4 +164,8 @@ public class WarBuilder {
         }
         output.closeEntry();
     }
+
+    private final ZipOutputStream output;
+    private final List<String> classesDirs;
+    private final List<File> jars;
 }

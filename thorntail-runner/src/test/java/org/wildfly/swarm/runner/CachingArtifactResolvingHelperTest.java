@@ -4,6 +4,7 @@ package org.wildfly.swarm.runner;
 import org.eclipse.aether.repository.NoLocalRepositoryManagerException;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.wildfly.swarm.runner.maven.CachingArtifactResolvingHelper;
 import org.wildfly.swarm.tools.ArtifactSpec;
 
 import java.util.List;

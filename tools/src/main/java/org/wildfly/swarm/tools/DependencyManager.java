@@ -39,6 +39,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
@@ -130,7 +131,7 @@ public class DependencyManager implements ResolvedDependencies {
 
         this.dependencies.stream()
                 .filter(e -> !this.removableDependencies.contains(e))
-                .filter(this::isNotThorntailRunner)
+//                .filter(a -> !isThorntailRunner(a)) // mstodo should already by in removables!
                 .forEach(e -> this.applicationManifest.addDependency(e.mavenGav()));
 
         analyzeModuleDependencies();
@@ -138,9 +139,8 @@ public class DependencyManager implements ResolvedDependencies {
         return this;
     }
 
-    private boolean isNotThorntailRunner(ArtifactSpec artifactSpec) {
-        return !artifactSpec.groupId().equals("io.thorntail")
-                || !artifactSpec.artifactId().equals("thorntail-runer");
+    private boolean isThorntailRunner(ArtifactSpec artifactSpec) {
+        return artifactSpec.groupId().equals("io.thorntail") && artifactSpec.artifactId().equals("thorntail-runner");
     }
 
     /**
@@ -152,19 +152,26 @@ public class DependencyManager implements ResolvedDependencies {
     private void resolveDependencies(DeclaredDependencies declaredDependencies, boolean autodetect) throws Exception {
         this.dependencies.clear();
 
+        // remove thorntail-runner dependencies, if some of them are needed, they should be re-added later
+        // mstodo: artifact white-list?
+        Collection<ArtifactSpec> explicitDependencies = new ArrayList<>(declaredDependencies.getExplicitDependencies());
+        Optional<ArtifactSpec> maybeRunner = explicitDependencies.stream().filter(this::isThorntailRunner).findAny();
+
+        maybeRunner.ifPresent(runnerJar -> filterOutRunnerJar(explicitDependencies, runnerJar));
+
         // resolve the explicit deps to local files
         // expand to transitive if these are not pre-solved
         boolean resolveExplicitsTransitively = !declaredDependencies.isPresolved() || autodetect;
         Collection<ArtifactSpec> resolvedExplicitDependencies = resolveExplicitsTransitively ?
-                resolver.resolveAllArtifactsTransitively(declaredDependencies.getExplicitDependencies(), false) :
-                resolver.resolveAllArtifactsNonTransitively(declaredDependencies.getExplicitDependencies());
+                resolver.resolveAllArtifactsTransitively(explicitDependencies, false) :
+                resolver.resolveAllArtifactsNonTransitively(explicitDependencies);
 
         this.dependencies.addAll(resolvedExplicitDependencies);
 
         // resolve transitives if not pre-computed (i.e. from maven/gradle plugin)
         if (declaredDependencies.getTransientDependencies().isEmpty()) {
 
-            Collection<ArtifactSpec> inputSet = declaredDependencies.getExplicitDependencies();
+            Collection<ArtifactSpec> inputSet = explicitDependencies;
             Collection<ArtifactSpec> filtered = inputSet
                     .stream()
                     .filter(dep -> dep.type().equals(JAR)) // filter out composite types, like ear, war, etc
@@ -208,7 +215,19 @@ public class DependencyManager implements ResolvedDependencies {
                     resolver.resolveAllArtifactsNonTransitively(remainder)
             );
         }
+    }
 
+    private void filterOutRunnerJar(Collection<ArtifactSpec> explicitDependencies, ArtifactSpec runnerJar) {
+        removableDependencies.add(runnerJar);
+        explicitDependencies.remove(runnerJar);
+
+        mavenDependencies(runnerJar.file)
+                .stream()
+                .map(ArtifactSpec::fromMavenDependencyDescription)
+                .peek(explicitDependencies::remove)
+                .forEach(removableDependencies::add);
+        System.out.println("removable dependencies: ");
+        removableDependencies.forEach(d -> System.out.println(d.jarName() + " # " + d.sha1sum));
     }
 
     private void analyzeModuleDependencies() {
@@ -228,7 +247,7 @@ public class DependencyManager implements ResolvedDependencies {
     private void analyzeFractionManifests() {
         this.dependencies.stream()
                 .map(e -> fractionManifest(e.file))
-                .filter(e -> e != null)
+                .filter(Objects::nonNull)
                 .peek(this.fractionManifests::add)
                 .forEach((manifest) -> {
                     String module = manifest.getModule();
@@ -269,7 +288,6 @@ public class DependencyManager implements ResolvedDependencies {
                 .collect(Collectors.toSet());
 
         this.removableDependencies.addAll(justJars);
-        this.removableDependencies.removeAll(nonBootstrapTransitive);
 
         if (removeAllThorntailLibs) {
             // mstodo test!
@@ -281,7 +299,7 @@ public class DependencyManager implements ResolvedDependencies {
             Set<String> uniqueMavenDependencies = new HashSet<>();
             this.dependencies.stream()
                     .map(e -> e.file)
-                    .flatMap(e -> ideRunDependencies(e).stream())
+                    .flatMap(e -> mavenDependencies(e).stream())
                     .forEach(uniqueMavenDependencies::add);
             this.fractionManifests.stream()
                     .flatMap(manifest -> manifest.getMavenDependencies().stream())
@@ -291,6 +309,8 @@ public class DependencyManager implements ResolvedDependencies {
                     .map(ArtifactSpec::fromMavenDependencyDescription)
                     .filter(spec -> !whitelist.contains(spec.mscGav()))
                     .forEach(this.removableDependencies::add);
+        } else {
+            this.removableDependencies.removeAll(nonBootstrapTransitive);
         }
     }
 
@@ -370,7 +390,7 @@ public class DependencyManager implements ResolvedDependencies {
         return false;
     }
 
-    protected List<String> ideRunDependencies(File file) {
+    protected List<String> mavenDependencies(File file) {
         if (file == null) {
             return Collections.emptyList();
         }

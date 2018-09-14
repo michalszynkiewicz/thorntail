@@ -16,7 +16,9 @@
 package org.wildfly.swarm.runner;
 
 import org.w3c.dom.Document;
-import org.wildfly.swarm.spi.meta.SimpleLogger;
+import org.wildfly.swarm.runner.cache.ArtifactResolutionCache;
+import org.wildfly.swarm.runner.maven.CachingArtifactResolvingHelper;
+import org.wildfly.swarm.runner.utils.StdoutLogger;
 import org.wildfly.swarm.tools.ArtifactSpec;
 import org.wildfly.swarm.tools.BuildTool;
 import org.wildfly.swarm.tools.DeclaredDependencies;
@@ -51,7 +53,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toList;
-import static org.wildfly.swarm.runner.StringUtils.randomAlphabetic;
+import static org.wildfly.swarm.runner.utils.StringUtils.randomAlphabetic;
 
 /**
  * @author Michal Szynkiewicz, michal.l.szynkiewicz@gmail.com
@@ -104,7 +106,7 @@ public class FatJarBuilder {
     private File doBuild() throws Exception {
         final String type = "war";
 
-        // TODO: NOTE: we don't know which deps are transitive!!!
+        // NOTE: we don't know which deps are transitive!!!
         long start = System.currentTimeMillis();
         List<ArtifactOrFile> classPathEntries = analyzeClasspath();
         System.out.println("Classpath analyzing time: " + (System.currentTimeMillis() - start + " ms"));
@@ -120,45 +122,12 @@ public class FatJarBuilder {
                 .properties(System.getProperties())
                 .fractionDetectionMode(BuildTool.FractionDetectionMode.when_missing)
                 .hollow(false)
-                .logger(new SimpleLogger() {
-                    @Override
-                    public void debug(String msg) {
-                        System.out.println(msg);
-                    }
-
-                    @Override
-                    public void info(String msg) {
-                        System.out.println(msg);
-                    }
-
-                    @Override
-                    public void error(String msg) {
-                        System.err.println(msg);
-                    }
-
-                    @Override
-                    public void error(String msg, Throwable t) {
-                        System.err.println(msg);
-                        t.printStackTrace();
-                    }
-                });
+                .logger(new StdoutLogger());
 
         String mainClass = System.getProperty("thorntail.runner.main-class");
         if (mainClass != null) {
             tool.mainClass(mainClass);
         }
-
-//        TODO support fraction exclusion? consider using a system property
-//        this.fractions.forEach(f -> {
-//            if (f.startsWith(EXCLUDE_PREFIX)) {
-//                tool.excludeFraction(ArtifactSpec.fromFractionDescriptor(FractionDescriptor.fromGav(FractionList.get(), f.substring(1))));
-//            } else {
-//                tool.fraction(ArtifactSpec.fromFractionDescriptor(FractionDescriptor.fromGav(FractionList.get(), f)));
-//            }
-//        });
-
-//        Map<ArtifactSpec, Set<ArtifactSpec>> buckets = createBuckets(this.project.getArtifacts(), this.project.getDependencies());
-
 
         tool.declaredDependencies(declaredDependencies(classPathEntries));
 
@@ -175,7 +144,7 @@ public class FatJarBuilder {
 
         tool.repackageWar(war);
 
-        DependencyCache.INSTANCE.store();
+        ArtifactResolutionCache.INSTANCE.store();
 
         return jar;
     }
@@ -199,7 +168,6 @@ public class FatJarBuilder {
                     .filter(file -> file.endsWith(".jar"))
                     .map(File::new)
                     .collect(Collectors.toList());
-
 
             return WarBuilder.build(classesUrls, classpathJars);
         } catch (IOException e) {
@@ -247,6 +215,8 @@ public class FatJarBuilder {
         if (!url.toString().endsWith(".jar")) {
             return ArtifactOrFile.file(file);
         }
+        // todo speed up?
+        // todo: maybe speed up xml parsing?
         try (FileSystem fs = FileSystems.newFileSystem(Paths.get(file), getClass().getClassLoader())) {
             Optional<Path> maybePomXml = findPom(fs);
 

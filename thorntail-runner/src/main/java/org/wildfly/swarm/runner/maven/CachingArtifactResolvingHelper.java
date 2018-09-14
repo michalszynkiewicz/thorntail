@@ -14,10 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.wildfly.swarm.runner;
+package org.wildfly.swarm.runner.maven;
 
-import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
-import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.artifact.Artifact;
@@ -25,27 +23,19 @@ import org.eclipse.aether.artifact.DefaultArtifact;
 import org.eclipse.aether.collection.CollectRequest;
 import org.eclipse.aether.collection.CollectResult;
 import org.eclipse.aether.collection.DependencyCollectionException;
-import org.eclipse.aether.connector.basic.BasicRepositoryConnectorFactory;
 import org.eclipse.aether.graph.Dependency;
-import org.eclipse.aether.impl.DefaultServiceLocator;
-import org.eclipse.aether.repository.LocalRepository;
-import org.eclipse.aether.repository.Proxy;
 import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.resolution.ArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactResolutionException;
 import org.eclipse.aether.resolution.ArtifactResult;
-import org.eclipse.aether.spi.connector.RepositoryConnectorFactory;
-import org.eclipse.aether.spi.connector.transport.TransporterFactory;
-import org.eclipse.aether.transport.file.FileTransporterFactory;
-import org.eclipse.aether.transport.http.HttpTransporterFactory;
 import org.eclipse.aether.util.graph.visitor.PreorderNodeListGenerator;
-import org.eclipse.aether.util.repository.AuthenticationBuilder;
 import org.wildfly.swarm.maven.utils.RepositorySystemSessionWrapper;
+import org.wildfly.swarm.runner.cache.ArtifactResolutionCache;
+import org.wildfly.swarm.runner.cache.DependencyResolutionCache;
 import org.wildfly.swarm.tools.ArtifactResolvingHelper;
 import org.wildfly.swarm.tools.ArtifactSpec;
 
 import java.io.File;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -54,6 +44,11 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import static org.wildfly.swarm.runner.utils.StringUtils.randomAlphabetic;
+import static org.wildfly.swarm.runner.maven.MavenInitializer.buildRemoteRepository;
+import static org.wildfly.swarm.runner.maven.MavenInitializer.newRepositorySystem;
+import static org.wildfly.swarm.runner.maven.MavenInitializer.newSession;
 
 /**
  * mstodo: policy for releases and snapshots?
@@ -68,11 +63,13 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
         session = newSession(repoSystem);
 
         this.remoteRepositories.add(buildRemoteRepository(
+                session,
                 "jboss-public-repository-group",
                 "https://repository.jboss.org/nexus/content/groups/public/",
                 null,
                 null));
         this.remoteRepositories.add(buildRemoteRepository(
+                session,
                 "maven-central",
                 "https://repo.maven.apache.org/maven2/",
                 null,
@@ -85,15 +82,15 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
     @Override
     public ArtifactSpec resolve(ArtifactSpec spec) {
         if (spec.file == null) {
-            File maybeFile = dependencyCache.getCachedFile(spec);
-            if (!dependencyCache.isFailureToResolveStored(spec) && maybeFile == null) {
+            File maybeFile = artifactCache.getCachedFile(spec);
+            if (!artifactCache.isKnownFailure(spec) && maybeFile == null) {
                 System.out.println("no cached file for " + spec.mscGav());
-                maybeFile = getArtifactFile(spec);
-                dependencyCache.storeArtifactFile(spec, maybeFile);
+                maybeFile = resolveArtifactFile(spec);
+                artifactCache.storeArtifactFile(spec, maybeFile);
             }
 
             if (maybeFile == null) {
-                dependencyCache.storeResolutionFailure(spec);
+                artifactCache.storeResolutionFailure(spec);
                 return null;
             }
             spec.file = maybeFile;
@@ -116,8 +113,6 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
         System.out.println("resolving artifacts");
         String originalPoolSize = System.getProperty(PARALLELISM);
         try {
-            // mstodo waaay to slow
-            // mstodo try simple parallelism with 20 threads? 10?
             System.setProperty(PARALLELISM, "20");
             Set<ArtifactSpec> result = toResolve.parallelStream()
                     .map(this::resolve)
@@ -153,42 +148,9 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
             username = split[1];
             password = split[2];
         }
-        this.remoteRepositories.add(buildRemoteRepository(StringUtils.randomAlphabetic(8), url, username, password));
+        this.remoteRepositories.add(buildRemoteRepository(session, randomAlphabetic(8), url, username, password));
     }
 
-    private static RepositorySystem newRepositorySystem() {
-        DefaultServiceLocator locator = MavenRepositorySystemUtils.newServiceLocator();
-        locator.addService(RepositoryConnectorFactory.class, BasicRepositoryConnectorFactory.class);
-        locator.addService(TransporterFactory.class, FileTransporterFactory.class);
-        locator.addService(TransporterFactory.class, HttpTransporterFactory.class);
-
-        return locator.getService(RepositorySystem.class);
-    }
-
-    private static RepositorySystemSession newSession(RepositorySystem system) {
-        DefaultRepositorySystemSession session = MavenRepositorySystemUtils.newSession();
-
-        LocalRepository localRepo = new LocalRepository(localRepoLocation());
-        session.setLocalRepositoryManager(system.newLocalRepositoryManager(session, localRepo));
-
-        return session;
-    }
-
-    private static File localRepoLocation() {
-        File result;
-        String userRepository = System.getProperty("thorntail.runner.local-repository");
-        if (userRepository != null) {
-            result = new File(userRepository);
-            if (!result.isDirectory()) {
-                System.err.println("The defined local repository: " + userRepository + " does not exist or is not a directory");
-            }
-        } else {
-            String userHome = System.getProperty("user.home");
-            result = Paths.get(userHome, ".m2", "repository").toFile();      // mstodo maybe use thorntail-runner-cache if it does not exist?
-            // mstodo check if exists, ask user to create or point to a different location?
-        }
-        return result;
-    }
 
     private Collection<ArtifactSpec> resolveDependencies(final Collection<ArtifactSpec> specs, boolean defaultExcludes) throws DependencyCollectionException {
         long start = System.currentTimeMillis();
@@ -201,7 +163,6 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
                             .collect(Collectors.toList());
 
             CollectRequest collectRequest = new CollectRequest(dependencies, null, remoteRepositories);
-
 
             RepositorySystemSession session = new RepositorySystemSessionWrapper(this.session, defaultExcludes);
             CollectResult result = this.repoSystem.collectDependencies(session, collectRequest);
@@ -236,12 +197,7 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
     private Collection<ArtifactSpec> resolveDependencies(List<ArtifactSpec> dependencyNodes) {
         long start = System.currentTimeMillis();
         // if dependencies were previously resolved, we don't need to resolve using remote repositories
-        Set<String> resolvedGavs = dependencyCache.allResolvedMscGavs();
-
         dependencyNodes = new ArrayList<>(dependencyNodes);
-        dependencyNodes.removeIf(
-                spec -> resolvedGavs.contains(spec.mscGav())
-        );
 
         System.out.println("parallel resolution time: " + (System.currentTimeMillis() - start));
 
@@ -270,64 +226,26 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
                 type, spec.version());
     }
 
-    // mstodo simplify
-    private File getArtifactFile(ArtifactSpec spec) {
+    private File resolveArtifactFile(ArtifactSpec spec) {
         ArtifactRequest request = new ArtifactRequest();
         request.setArtifact(artifact(spec));
-        ArtifactResult artifactResult = null;
-        // try local resolution first, fallback to remote repos if not found
-        try {
-            artifactResult = repoSystem.resolveArtifact(session, request);
-        } catch (ArtifactResolutionException ignored) {
-            remoteRepositories.forEach(request::addRepository);
-            try {
-                artifactResult = repoSystem.resolveArtifact(session, request);
-            } catch (ArtifactResolutionException e) {
-                e.printStackTrace();
-            }
-        }
 
-        if (artifactResult != null && artifactResult.isResolved()) {
-            return artifactResult.getArtifact().getFile();
-        } else {
+        remoteRepositories.forEach(request::addRepository);
+
+        try {
+            ArtifactResult artifactResult = repoSystem.resolveArtifact(session, request);
+
+            return artifactResult.isResolved()
+                    ? artifactResult.getArtifact().getFile()
+                    : null;
+        } catch (ArtifactResolutionException e) {
+            e.printStackTrace();
             return null;
         }
     }
 
-
-    private RemoteRepository buildRemoteRepository(final String id, final String url, final String username, final String password) {
-        RemoteRepository.Builder builder = new RemoteRepository.Builder(id, "default", url);
-        if (username != null) {
-            builder.setAuthentication(new AuthenticationBuilder()
-                    .addUsername(username)
-                    .addPassword(password).build());
-        }
-
-        RemoteRepository repository = builder.build();
-
-        final RemoteRepository mirror = session.getMirrorSelector().getMirror(repository);
-
-        if (mirror != null) {
-            final org.eclipse.aether.repository.Authentication mirrorAuth = session.getAuthenticationSelector()
-                    .getAuthentication(mirror);
-            RemoteRepository.Builder mirrorBuilder = new RemoteRepository.Builder(mirror)
-                    .setId(repository.getId());
-            if (mirrorAuth != null) {
-                mirrorBuilder.setAuthentication(mirrorAuth);
-            }
-            repository = mirrorBuilder.build();
-        }
-
-        Proxy proxy = session.getProxySelector().getProxy(repository);
-
-        if (proxy != null) {
-            repository = new RemoteRepository.Builder(repository).setProxy(proxy).build();
-        }
-
-        return repository;
-    }
-
-    private final DependencyCache dependencyCache = DependencyCache.INSTANCE;
+    private final DependencyResolutionCache dependencyCache = DependencyResolutionCache.INSTANCE;
+    private final ArtifactResolutionCache artifactCache = ArtifactResolutionCache.INSTANCE;
     private final List<RemoteRepository> remoteRepositories = new ArrayList<>();
     private final RepositorySystem repoSystem;
     private final RepositorySystemSession session;
