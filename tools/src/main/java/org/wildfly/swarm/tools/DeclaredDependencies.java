@@ -36,15 +36,17 @@ import org.wildfly.swarm.bootstrap.util.MavenArtifactDescriptor;
  */
 public class DeclaredDependencies extends DependencyTree<ArtifactSpec> {
 
-    public Collection<ArtifactSpec> getExplicitDependencies() {
+    public Collection<ArtifactSpec> getDirectDependencies() {
         return getDirectDeps();
     }
 
-    public Set<ArtifactSpec> getTransientDependencies() {
+    public Set<ArtifactSpec> getTransientDependencies(Collection<ArtifactSpec> skipped) {
         if (null == allTransient) {
             allTransient = new HashSet<>();
             for (ArtifactSpec directDep : getDirectDeps()) {
-                allTransient.addAll(getTransientDependencies(directDep));
+                if (!skipped.contains(directDep)) {
+                    allTransient.addAll(getTransientDependencies(directDep));
+                }
             }
         }
         return allTransient;
@@ -74,8 +76,8 @@ public class DeclaredDependencies extends DependencyTree<ArtifactSpec> {
      *
      * @return
      */
-    public boolean isPresolved() {
-        return getTransientDependencies().size() > 0;
+    public boolean isPresolved(Collection<ArtifactSpec> skipped) { // mstodo make sure ArtifactSpec implements equals
+        return getTransientDependencies(skipped).size() > 0;
     }
 
     public static ArtifactSpec createSpec(String gav) {

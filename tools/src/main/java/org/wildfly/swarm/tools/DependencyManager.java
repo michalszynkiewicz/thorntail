@@ -131,7 +131,6 @@ public class DependencyManager implements ResolvedDependencies {
 
         this.dependencies.stream()
                 .filter(e -> !this.removableDependencies.contains(e))
-//                .filter(a -> !isThorntailRunner(a)) // mstodo should already by in removables!
                 .forEach(e -> this.applicationManifest.addDependency(e.mavenGav()));
 
         analyzeModuleDependencies();
@@ -151,82 +150,80 @@ public class DependencyManager implements ResolvedDependencies {
      */
     private void resolveDependencies(DeclaredDependencies declaredDependencies, boolean autodetect) throws Exception {
         this.dependencies.clear();
+        Collection<ArtifactSpec> skippedArtifacts = new ArrayList<>();
 
         // remove thorntail-runner dependencies, if some of them are needed, they should be re-added later
         // mstodo: artifact white-list?
-        Collection<ArtifactSpec> explicitDependencies = new ArrayList<>(declaredDependencies.getExplicitDependencies());
-        Optional<ArtifactSpec> maybeRunner = explicitDependencies.stream().filter(this::isThorntailRunner).findAny();
+        Collection<ArtifactSpec> explicitDependencies = new ArrayList<>(declaredDependencies.getDirectDependencies());
+        Optional<ArtifactSpec> thorntailRunner = explicitDependencies.stream().filter(this::isThorntailRunner).findAny();
 
-        maybeRunner.ifPresent(runnerJar -> filterOutRunnerJar(explicitDependencies, runnerJar));
+        thorntailRunner.ifPresent(runner -> {
+            skippedArtifacts.add(runner);
+            filterOutRunnerDependencies(runner, explicitDependencies);
+        });
 
         // resolve the explicit deps to local files
         // expand to transitive if these are not pre-solved
-        boolean resolveExplicitsTransitively = !declaredDependencies.isPresolved() || autodetect;
+        boolean resolveExplicitsTransitively = !declaredDependencies.isPresolved(skippedArtifacts) || autodetect;
         Collection<ArtifactSpec> resolvedExplicitDependencies = resolveExplicitsTransitively ?
                 resolver.resolveAllArtifactsTransitively(explicitDependencies, false) :
                 resolver.resolveAllArtifactsNonTransitively(explicitDependencies);
 
         this.dependencies.addAll(resolvedExplicitDependencies);
 
+        Collection<ArtifactSpec> inputSet;
+        Collection<ArtifactSpec> resolvedTransientDependencies;
         // resolve transitives if not pre-computed (i.e. from maven/gradle plugin)
-        if (declaredDependencies.getTransientDependencies().isEmpty()) {
-
-            Collection<ArtifactSpec> inputSet = explicitDependencies;
+        if (declaredDependencies.getTransientDependencies(skippedArtifacts).isEmpty()) {
+            // mstodo here?
+            inputSet = explicitDependencies;
             Collection<ArtifactSpec> filtered = inputSet
                     .stream()
                     .filter(dep -> dep.type().equals(JAR)) // filter out composite types, like ear, war, etc
                     .collect(Collectors.toList());
 
-            Collection<ArtifactSpec> resolvedTransientDependencies = resolver.resolveAllArtifactsTransitively(
+            resolvedTransientDependencies = resolver.resolveAllArtifactsTransitively(
                     filtered, false
             );
 
             this.dependencies.addAll(resolvedTransientDependencies);
-
-            // add the remaining transitive ones that have not been filtered
-            Collection<ArtifactSpec> remainder = new ArrayList<>();
-            inputSet.forEach(remainder::add);
-            remainder.removeAll(resolvedTransientDependencies);
-
-            this.dependencies.addAll(
-                    resolver.resolveAllArtifactsNonTransitively(remainder)
-            );
         } else {
             // if transitive deps are pre-computed, resolve them to local files if needed
-            Collection<ArtifactSpec> inputSet = declaredDependencies.getTransientDependencies();
+            // mstodo
+            inputSet = declaredDependencies.getTransientDependencies(skippedArtifacts);
             Collection<ArtifactSpec> filtered = inputSet
                     .stream()
                     .filter(dep -> dep.type().equals(JAR))
                     .collect(Collectors.toList());
 
-            Collection<ArtifactSpec> resolvedTransientDependencies = Collections.emptySet();
+            resolvedTransientDependencies = Collections.emptySet();
             if (filtered.size() > 0) {
 
                 resolvedTransientDependencies = resolver.resolveAllArtifactsNonTransitively(filtered);
                 this.dependencies.addAll(resolvedTransientDependencies);
             }
-
-            // add the remaining transitive ones that have not been filtered
-            Collection<ArtifactSpec> remainder = new ArrayList<>();
-            inputSet.forEach(remainder::add);
-            remainder.removeAll(resolvedTransientDependencies);
-
-            this.dependencies.addAll(
-                    resolver.resolveAllArtifactsNonTransitively(remainder)
-            );
         }
+
+        // add the remaining transitive ones that have not been filtered
+        Collection<ArtifactSpec> remainder = new ArrayList<>(inputSet);
+        remainder.removeAll(resolvedTransientDependencies);
+
+        this.dependencies.addAll(
+                resolver.resolveAllArtifactsNonTransitively(remainder)
+        );
     }
 
-    private void filterOutRunnerJar(Collection<ArtifactSpec> explicitDependencies, ArtifactSpec runnerJar) {
+    private void filterOutRunnerDependencies(ArtifactSpec runnerJar, Collection<ArtifactSpec> explicitDependencies) {
         removableDependencies.add(runnerJar);
         explicitDependencies.remove(runnerJar);
 
         mavenDependencies(runnerJar.file)
                 .stream()
                 .map(ArtifactSpec::fromMavenDependencyDescription)
-                .peek(explicitDependencies::remove)
+//                .peek(explicitDependencies::remove) // mstodo no reason to remove runner deps from explicit deps
+                // mstodo we need a different place to do it for runner run
                 .forEach(removableDependencies::add);
-        System.out.println("removable dependencies: ");
+        System.out.println("removable dependencies: ");          // mstodo remove
         removableDependencies.forEach(d -> System.out.println(d.jarName() + " # " + d.sha1sum));
     }
 
@@ -258,10 +255,7 @@ public class DependencyManager implements ResolvedDependencies {
 
         this.dependencies.stream()
                 .filter(e -> isFractionJar(e.file) || isConfigApiModulesJar(e.file))
-                .forEach((artifact) -> {
-                    this.applicationManifest.addBootstrapArtifact(artifact.mavenGav());
-                });
-
+                .forEach((artifact) -> this.applicationManifest.addBootstrapArtifact(artifact.mavenGav()));
     }
 
     /**
@@ -272,24 +266,8 @@ public class DependencyManager implements ResolvedDependencies {
         Collection<ArtifactSpec> bootstrapDeps = this.dependencies.stream()
                 .filter(e -> isFractionJar(e.file))
                 .collect(Collectors.toSet());
-
-        List<ArtifactSpec> nonBootstrapDeps = new ArrayList<>();
-        nonBootstrapDeps.addAll(declaredDependencies.getExplicitDependencies());
-        nonBootstrapDeps.removeAll(bootstrapDeps);
-
-        // re-resolve the application's dependencies minus any of our swarm dependencies
-        // [hb] TODO this can be improved to use the previous results if the data-structure allows to reason about the parent of transitive deps
-        Collection<ArtifactSpec> nonBootstrapTransitive = resolver.resolveAllArtifactsTransitively(nonBootstrapDeps, true);
-
-        // do not remove .war or .rar or anything else weird-o like.
-        Set<ArtifactSpec> justJars = this.dependencies
-                .stream()
-                .filter(e -> e.type().equals(JAR))
-                .collect(Collectors.toSet());
-
-        this.removableDependencies.addAll(justJars);
-
         if (removeAllThorntailLibs) {
+            // mstodo: runner deps?
             // mstodo test!
             String whitelistProperty = System.getProperty("thorntail.runner.user-dependencies");
             Set<String> whitelist = new HashSet<>();
@@ -309,7 +287,23 @@ public class DependencyManager implements ResolvedDependencies {
                     .map(ArtifactSpec::fromMavenDependencyDescription)
                     .filter(spec -> !whitelist.contains(spec.mscGav()))
                     .forEach(this.removableDependencies::add);
+            removableDependencies.addAll(bootstrapDeps);
+            System.out.println("removable deps: " + bootstrapDeps.stream().map(ArtifactSpec::jarName).collect(Collectors.joining("\n")));
         } else {
+            List<ArtifactSpec> nonBootstrapDeps = new ArrayList<>();
+            nonBootstrapDeps.addAll(declaredDependencies.getDirectDependencies());
+            nonBootstrapDeps.removeAll(bootstrapDeps);
+            // re-resolve the application's dependencies minus any of our swarm dependencies
+            // [hb] TODO this can be improved to use the previous results if the data-structure allows to reason about the parent of transitive deps
+            Collection<ArtifactSpec> nonBootstrapTransitive = resolver.resolveAllArtifactsTransitively(nonBootstrapDeps, true);
+
+            // do not remove .war or .rar or anything else weird-o like.
+            Set<ArtifactSpec> justJars = this.dependencies
+                    .stream()
+                    .filter(e -> e.type().equals(JAR))
+                    .collect(Collectors.toSet());
+
+            this.removableDependencies.addAll(justJars);
             this.removableDependencies.removeAll(nonBootstrapTransitive);
         }
     }
@@ -330,7 +324,8 @@ public class DependencyManager implements ResolvedDependencies {
             byte[] checksum = checksum(inputStream);
 
             return this.removableDependencies.stream()
-                    .filter(e -> path.endsWith(e.artifactId() + "-" + e.version() + ".jar"))
+                    .filter(e -> path.endsWith(e.artifactId() + "-" + e.version() + ".jar")) // mstodo - doesn't sound right...
+                    // mstodo: maybe make sure all removable have checksums and check if this artifact's checksum ain't one of 'em?
                     .map(e -> {
                         if (e.sha1sum != null) {
                             return DatatypeConverter.parseHexBinary(e.sha1sum.toUpperCase());
@@ -462,5 +457,4 @@ public class DependencyManager implements ResolvedDependencies {
     private ArtifactResolver resolver;
 
     private final boolean removeAllThorntailLibs;
-
 }
