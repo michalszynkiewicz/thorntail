@@ -509,7 +509,6 @@ public class BuildTool {
         Set<ArtifactSpec> alreadyResolved = new HashSet<>();
         List<ArtifactSpec> toBeResolved = new ArrayList<>();
 
-        // mstodo this thingy may have runner deps, remove them somewhere
         for (ArtifactSpec dependency : resolvedDependencies.getDependencies()) {
 
             boolean unresolved = !dependency.isResolved();
@@ -522,7 +521,6 @@ public class BuildTool {
             }
         }
 
-        // mstodo the thingy below should not have any runner deps
         for (ArtifactSpec dependency : resolvedDependencies.getModuleDependencies()) {
             if (!dependency.isResolved()) {
                 toBeResolved.add(dependency);
@@ -540,8 +538,6 @@ public class BuildTool {
             alreadyResolved.addAll(newResolved);
         }
 
-        // MSTODO: remove web-inf/lib elements from m2repo?
-        // MSTODO: remove thorntail-runner
         for (ArtifactSpec dependency : alreadyResolved) {
             addArtifactToArchiveMavenRepository(archive, dependency);
         }

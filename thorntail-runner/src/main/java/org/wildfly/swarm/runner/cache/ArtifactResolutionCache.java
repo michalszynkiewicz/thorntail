@@ -90,7 +90,7 @@ public class ArtifactResolutionCache {
             if (file.exists()) {
                 resolvedCache.put(key, file);
             } else {
-                System.out.printf("Omitting %s -> %s mapping from cache resolution. It points to a non-existent file", key, path);
+                System.out.printf("Omitting %s -> %s mapping from cache resolution. It points to a non-existent file\n", key, path);
             }
         } catch (Exception any) {
             System.out.printf("Omitting invalid cache line %s\n", cacheFileLine);

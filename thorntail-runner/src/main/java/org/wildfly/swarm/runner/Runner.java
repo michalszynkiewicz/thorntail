@@ -37,9 +37,11 @@ import static java.util.Arrays.asList;
 /**
  * The class to execute when running Thorntail in the IDE.
  *
+ * During execution, it resolves project's dependencies to ${user.home}
+ *
  * It first generates an uber-jar and then executes it.
  * The jar is generated from the IDE classpath by taking the Thorntail dependencies, generating an uber-jar in the similar way
- * as thorntail-maven-plugin does and removing all the transitive dependencies of the Thorntail elements from WEB-INF/lib
+ * the thorntail-maven-plugin does and removing all the transitive dependencies of the Thorntail elements from WEB-INF/lib
  * in the internal WAR.
  *
  * The following options are available to control the execution:
@@ -48,7 +50,7 @@ import static java.util.Arrays.asList;
  *         <b>thorntail.runner.preserve-jar</b> - keep the generated uber-jar when the application is stopped; might be useful for debugging
  *     </li>
  *     <li>
- *         <b>thorntail.runner.user-dependencies</b> - a comma-separated list of groupId:artifactId:version of artifacts
+ *         <b>thorntail.runner.user-dependencies</b> - a comma-separated list of groupId:artifactId:version[:classifier] of artifacts
  *         to keep in WEB-INF/lib even though they are dependencies of Swarm elements
  *     </li>
  *     <li>
@@ -62,7 +64,12 @@ import static java.util.Arrays.asList;
  *     <li>
  *         <b>thorntail.runner.repositories</b> - additional maven repositories to look for artifacts.
  *         By default Runner searches for artifacts in Maven Central and repository.jboss.org.
- *         Expects a comma separated list of repositoryUrl[:username:password]
+ *         Expects a comma separated list of repositoryUrl[#username#password].
+ *     </li>
+ *     <li>
+ *         <b>thorntail.runner.local-repository</b> - location of the local repository.
+ *         By default, Runner will use ${user.home}/.m2/repository to store any resolved artifacts.
+ *         This is the default Maven location. This property let's you choose a different location.
  *     </li>
  * </ul>
  *
@@ -75,7 +82,7 @@ public class Runner {
     }
 
     public static void main(String[] args) throws Exception {
-        System.out.printf("Starting Thorntail Runner. Runner caches will be started in %s\n", RunnerCacheConstants.CACHE_STORAGE_DIR);
+        System.out.printf("Starting Thorntail Runner. Runner caches will be stored in %s\n", RunnerCacheConstants.CACHE_STORAGE_DIR);
         URLClassLoader loader = createClassLoader();
         run((Object) args, loader);
     }

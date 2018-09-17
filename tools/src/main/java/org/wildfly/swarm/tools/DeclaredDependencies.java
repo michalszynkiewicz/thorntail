@@ -76,7 +76,7 @@ public class DeclaredDependencies extends DependencyTree<ArtifactSpec> {
      *
      * @return
      */
-    public boolean isPresolved(Collection<ArtifactSpec> skipped) { // mstodo make sure ArtifactSpec implements equals
+    public boolean isPresolved(Collection<ArtifactSpec> skipped) {
         return getTransientDependencies(skipped).size() > 0;
     }
 

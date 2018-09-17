@@ -42,20 +42,20 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static org.wildfly.swarm.runner.utils.StringUtils.randomAlphabetic;
 import static org.wildfly.swarm.runner.maven.MavenInitializer.buildRemoteRepository;
 import static org.wildfly.swarm.runner.maven.MavenInitializer.newRepositorySystem;
 import static org.wildfly.swarm.runner.maven.MavenInitializer.newSession;
+import static org.wildfly.swarm.runner.utils.StringUtils.randomAlphabetic;
 
-/**
- * mstodo: policy for releases and snapshots?
- */
 public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
-
-    public static final String PARALLELISM = "java.util.concurrent.ForkJoinPool.common.parallelism";
 
     public CachingArtifactResolvingHelper() {
         repoSystem = newRepositorySystem();
@@ -75,7 +75,6 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
                 null,
                 null));
 
-        // MSTODO: test by removing central and adding it with a property
         addUserRepositories();
     }
 
@@ -109,23 +108,33 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
             toResolve = resolveDependencies(specs, defaultExcludes);
         }
 
-        long start = System.currentTimeMillis(); // mstodo better time logging
-        System.out.println("resolving artifacts");
-        String originalPoolSize = System.getProperty(PARALLELISM);
+        System.out.println("Resolving artifacts. It may take a while...");
+        return resolveInParallel(toResolve);
+    }
+
+    private Set<ArtifactSpec> resolveInParallel(Collection<ArtifactSpec> toResolve) throws InterruptedException {
+        ExecutorService threadPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 10);
+        List<Callable<ArtifactSpec>> callable = toResolve.stream()
+                .map(spec -> (Callable<ArtifactSpec>) (() -> this.resolve(spec)))
+                .collect(Collectors.toList());
+        
+        List<Future<ArtifactSpec>> futures = threadPool.invokeAll(
+                callable
+        );
+        Set<ArtifactSpec> result = futures.stream()
+                .map(this::safeGet)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        threadPool.shutdown();
+        return result;
+    }
+
+    private <T> T safeGet(Future<T> future) {
         try {
-            System.setProperty(PARALLELISM, "20");
-            Set<ArtifactSpec> result = toResolve.parallelStream()
-                    .map(this::resolve)
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.toSet());
-            return result;
-        } finally {
-            if (originalPoolSize == null) {
-                System.getProperties().remove(PARALLELISM);
-            } else {
-                System.setProperty(PARALLELISM, originalPoolSize);
-            }
-            System.out.println("resolving time: " + (System.currentTimeMillis() - start));
+            return future.get();
+        } catch (InterruptedException | ExecutionException e) {
+            e.printStackTrace();
+            return null;
         }
     }
 
@@ -139,7 +148,7 @@ public class CachingArtifactResolvingHelper implements ArtifactResolvingHelper {
     }
 
     private void addUserRepository(String repositoryAsString) {
-        String[] split = repositoryAsString.split(":");
+        String[] split = repositoryAsString.split("#");
         String url = split[0];
         String username = null;
         String password = null;

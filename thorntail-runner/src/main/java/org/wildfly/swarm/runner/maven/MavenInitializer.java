@@ -71,8 +71,12 @@ public class MavenInitializer {
         if (result == null) {
             String userHome = System.getProperty("user.home");
             result = Paths.get(userHome, ".m2", "repository").toFile();
-            // mstodo maybe use .thorntail-runner-cache if it does not exist?
-            // mstodo check if exists, ask user to create or point to a different location?
+
+            if (!result.exists()) {
+                result.mkdirs();
+            }
+            // TODO maybe use .thorntail-runner-cache if it does not exist?
+            // TODO check if exists, ask user to create or point to a different location?
         }
         return result;
     }

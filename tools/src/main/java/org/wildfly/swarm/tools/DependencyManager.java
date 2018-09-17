@@ -29,11 +29,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
-import java.security.DigestException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -153,7 +151,6 @@ public class DependencyManager implements ResolvedDependencies {
         Collection<ArtifactSpec> skippedArtifacts = new ArrayList<>();
 
         // remove thorntail-runner dependencies, if some of them are needed, they should be re-added later
-        // mstodo: artifact white-list?
         Collection<ArtifactSpec> explicitDependencies = new ArrayList<>(declaredDependencies.getDirectDependencies());
         Optional<ArtifactSpec> thorntailRunner = explicitDependencies.stream().filter(this::isThorntailRunner).findAny();
 
@@ -175,7 +172,6 @@ public class DependencyManager implements ResolvedDependencies {
         Collection<ArtifactSpec> resolvedTransientDependencies;
         // resolve transitives if not pre-computed (i.e. from maven/gradle plugin)
         if (declaredDependencies.getTransientDependencies(skippedArtifacts).isEmpty()) {
-            // mstodo here?
             inputSet = explicitDependencies;
             Collection<ArtifactSpec> filtered = inputSet
                     .stream()
@@ -189,7 +185,6 @@ public class DependencyManager implements ResolvedDependencies {
             this.dependencies.addAll(resolvedTransientDependencies);
         } else {
             // if transitive deps are pre-computed, resolve them to local files if needed
-            // mstodo
             inputSet = declaredDependencies.getTransientDependencies(skippedArtifacts);
             Collection<ArtifactSpec> filtered = inputSet
                     .stream()
@@ -220,11 +215,7 @@ public class DependencyManager implements ResolvedDependencies {
         mavenDependencies(runnerJar.file)
                 .stream()
                 .map(ArtifactSpec::fromMavenDependencyDescription)
-//                .peek(explicitDependencies::remove) // mstodo no reason to remove runner deps from explicit deps
-                // mstodo we need a different place to do it for runner run
                 .forEach(removableDependencies::add);
-        System.out.println("removable dependencies: ");          // mstodo remove
-        removableDependencies.forEach(d -> System.out.println(d.jarName() + " # " + d.sha1sum));
     }
 
     private void analyzeModuleDependencies() {
@@ -267,8 +258,6 @@ public class DependencyManager implements ResolvedDependencies {
                 .filter(e -> isFractionJar(e.file))
                 .collect(Collectors.toSet());
         if (removeAllThorntailLibs) {
-            // mstodo: runner deps?
-            // mstodo test!
             String whitelistProperty = System.getProperty("thorntail.runner.user-dependencies");
             Set<String> whitelist = new HashSet<>();
             if (whitelistProperty != null) {
@@ -282,13 +271,15 @@ public class DependencyManager implements ResolvedDependencies {
             this.fractionManifests.stream()
                     .flatMap(manifest -> manifest.getMavenDependencies().stream())
                     .forEach(uniqueMavenDependencies::add);
+
             uniqueMavenDependencies
                     .stream()
                     .map(ArtifactSpec::fromMavenDependencyDescription)
-                    .filter(spec -> !whitelist.contains(spec.mscGav()))
                     .forEach(this.removableDependencies::add);
+
             removableDependencies.addAll(bootstrapDeps);
-            System.out.println("removable deps: " + bootstrapDeps.stream().map(ArtifactSpec::jarName).collect(Collectors.joining("\n")));
+
+            removableDependencies.removeIf(dep -> whitelist.contains(dep.mscGav()));
         } else {
             List<ArtifactSpec> nonBootstrapDeps = new ArrayList<>();
             nonBootstrapDeps.addAll(declaredDependencies.getDirectDependencies());
@@ -319,33 +310,46 @@ public class DependencyManager implements ResolvedDependencies {
             return false;
         }
 
-        String path = node.getPath().get();
-        try (final InputStream inputStream = asset.openStream()) {
-            byte[] checksum = checksum(inputStream);
+        if (removableCheckSums == null) {
+            initCheckSums();
+        }
 
-            return this.removableDependencies.stream()
-                    .filter(e -> path.endsWith(e.artifactId() + "-" + e.version() + ".jar")) // mstodo - doesn't sound right...
-                    // mstodo: maybe make sure all removable have checksums and check if this artifact's checksum ain't one of 'em?
-                    .map(e -> {
-                        if (e.sha1sum != null) {
-                            return DatatypeConverter.parseHexBinary(e.sha1sum.toUpperCase());
-                        }
-                        try (final FileInputStream in = new FileInputStream(e.file)) {
-                            return checksum(in);
-                        } catch (IOException | NoSuchAlgorithmException | DigestException e1) {
-                            return null;
-                        }
-                    })
-                    .filter(Objects::nonNull)
-                    .anyMatch(e -> Arrays.equals(e, checksum));
-        } catch (NoSuchAlgorithmException | IOException | DigestException e) {
+        try (final InputStream inputStream = asset.openStream()) {
+            String checksum = checksum(inputStream);
+
+            return this.removableCheckSums.contains(checksum);
+        } catch (NoSuchAlgorithmException | IOException e) {
             e.printStackTrace();
         }
 
         return false;
     }
 
-    protected byte[] checksum(InputStream in) throws IOException, NoSuchAlgorithmException, DigestException {
+    private synchronized void initCheckSums() {
+        if (removableCheckSums == null) {
+            removableCheckSums = removableDependencies.stream()
+                    .map(this::checksum)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+        }
+    }
+
+    private String checksum(ArtifactSpec spec) {
+        if (spec.sha1sum != null) {
+            return spec.sha1sum.toUpperCase();
+        }
+
+        try {
+            try (FileInputStream stream = new FileInputStream(spec.file)) {
+                return checksum(stream);
+            }
+        } catch (Exception any) {
+            any.printStackTrace();
+            return null;
+        }
+    }
+
+    protected String checksum(InputStream in) throws IOException, NoSuchAlgorithmException {
         byte[] buf = new byte[1024];
         int len = 0;
 
@@ -355,7 +359,7 @@ public class DependencyManager implements ResolvedDependencies {
             md.update(buf, 0, len);
         }
 
-        return md.digest();
+        return DatatypeConverter.printHexBinary(md.digest());
     }
 
     protected boolean isConfigApiModulesJar(File file) {
@@ -449,6 +453,8 @@ public class DependencyManager implements ResolvedDependencies {
     private final Set<ArtifactSpec> dependencies = new HashSet<>();
 
     private final Set<ArtifactSpec> removableDependencies = new HashSet<>();
+
+    private volatile Set<String> removableCheckSums;
 
     private final Set<ArtifactSpec> moduleDependencies = new HashSet<>();
 
